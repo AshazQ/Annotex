@@ -1,0 +1,1075 @@
+"""LabelImg Shapes' window.
+
+Laid out like LabelImg Master - header docks, the canvas over a film strip,
+a side column, a status bar - so moving between the two costs nothing.
+Leaving an image writes what is on screen; a write that fails stops the move
+rather than dropping the work.
+"""
+
+from __future__ import annotations
+
+import os
+import traceback
+
+from PySide6.QtCore import QByteArray, QSize, Qt, QUrl
+from PySide6.QtGui import (QAction, QActionGroup, QDesktopServices, QImageReader,
+                           QKeySequence, QPixmap)
+from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel,
+                               QMainWindow, QMessageBox, QPushButton, QScrollArea,
+                               QSplitter, QStatusBar, QVBoxLayout, QWidget)
+
+from annotex.apps.labelimg.core.class_store import ClassStore, color_for_name
+from annotex.apps.labelimg.ui.dialogs.class_manager import ClassManagerDialog
+from annotex.apps.labelimg.ui.dialogs.label_dialog import LabelDialog
+from annotex.apps.labelimg.ui.panels import ActiveClassChip, ClassPalette
+from annotex.core.history import History
+from annotex.core.io_safe import FolderLock, folder_is_writable
+from annotex.ui import icons
+from annotex.ui.dialogs.common import Dialog
+from annotex.ui.filmstrip import FilmStrip
+from annotex.ui.palette import apply_palette, resolve_theme, stylesheet
+from annotex.ui.widgets import StatsPanel, divider
+
+from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, CURVE_SEGMENTS, HOTKEY_DIGITS,
+                      KIND_LABELS, LOCK_NAME, MAX_UNDO_STEPS, TASK_COCO, TASK_OBB,
+                      TASK_SEGMENT, class_store_path)
+from ..core import export as exporting
+from ..core.model import shapes_match
+from ..core.store import read_annotation, rename_label, scan_images, write_annotation
+from .canvas import (T_CIRCLE, T_ELLIPSE, T_FREEHAND, T_OBB, T_PAN, T_POLYGON, T_SELECT,
+                     ShapeCanvas)
+from .dialogs import ExportDialog, ShapesSettingsDialog
+from .panels import ShapeListPanel
+
+TOOLS = ((T_SELECT, "Select and edit", "V", "cursor"),
+         (T_POLYGON, "Polygon - click points, Enter to close", "P", "polygon"),
+         (T_OBB, "Oriented box - drag, then turn it with the round handle", "O", "obb"),
+         (T_CIRCLE, "Circle - drag out from the centre", "C", "circle"),
+         (T_ELLIPSE, "Ellipse - drag its box, Shift for a circle", "E", "ellipse"),
+         (T_FREEHAND, "Freehand - hold and trace the outline", "F", "freehand"),
+         (T_PAN, "Pan  (or hold Space)", "H", "hand"))
+
+
+class ShapesWindow(QMainWindow):
+
+    def __init__(self, settings, app, host=None, class_store=None):
+        super().__init__()
+        self.settings = settings
+        self.app = app
+        self.host = host
+        if host is not None:
+            settings.data["theme"] = host.theme_setting
+        self.theme = resolve_theme(settings.get("theme", "dark"), app)
+
+        self.folder = ""
+        self.images = []
+        self.index = 0
+        self.summary = {}                # rel -> (shape count or None, verified)
+        self.saved = None                # shapes on disk for the current image, None = no file
+        self.saved_verified = False
+        self.verified = False
+        self.read_only = False
+        self.image_ok = False
+        self._status_level = "info"
+
+        self.class_store = class_store or ClassStore.load_or_create(str(class_store_path()))
+        wanted = settings.get("class_project", "")
+        if wanted and wanted in self.class_store.projects:
+            self.class_store.set_active_project(wanted)
+        self.current_class = settings.get("last_class", "") or None
+        self.class_hotkeys = {}
+        self.hotkey_order = []
+
+        self.lock = FolderLock(LOCK_NAME, APP_VERSION)
+        self.history = History(MAX_UNDO_STEPS)
+
+        self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
+        self.setMinimumSize(1080, 680)
+        self.actions_by_id = {}
+        self._build_actions()
+        self._build_ui()
+        self._build_menus()
+        self._apply_theme()
+        self._apply_settings()
+        self.refresh_class_ui()
+        if host is None:
+            self._restore_geometry()
+        else:
+            self.menuBar().setNativeMenuBar(False)
+        self._sync_actions()
+        self._status("Open a folder of images to begin  ·  Ctrl+O", "info")
+
+    # ══════════════════════════════════════════════════════
+    # ACTIONS
+    # ══════════════════════════════════════════════════════
+    def _action(self, action_id, text, keys=(), slot=None, icon="", checkable=False) -> QAction:
+        action = QAction(text, self)
+        if isinstance(keys, str):
+            keys = (keys,)
+        if keys:
+            action.setShortcuts([QKeySequence(k) for k in keys])
+        action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+        action.setCheckable(checkable)
+        if slot is not None:
+            action.triggered.connect(self._guard(slot))
+        action.setData(icon)
+        self.addAction(action)
+        self.actions_by_id[action_id] = action
+        return action
+
+    def act(self, action_id) -> QAction:
+        return self.actions_by_id[action_id]
+
+    def _guard(self, handler):
+        def run(*_args):
+            try:
+                handler()
+            except Exception as exc:
+                traceback.print_exc()
+                self._status("Something went wrong: %s" % exc, "danger")
+        return run
+
+    def _build_actions(self) -> None:
+        a = self._action
+        a("open_folder", "Open folder…", ("Ctrl+O", "Ctrl+U"), self.choose_folder, "folder")
+        a("save", "Save", "Ctrl+S", self.save_current, "save")
+        a("export", "Export YOLO / COCO…", "Ctrl+Shift+E", self.open_export, "export")
+        a("next_image", "Next image", ("D", "PgDown"), self.next_image, "next")
+        a("prev_image", "Previous image", ("A", "PgUp"), self.prev_image, "prev")
+        a("verify", "Mark as verified", "Ctrl+Shift+V", self.toggle_verified, "verified", True)
+        a("undo", "Undo", "Ctrl+Z", self.undo, "undo")
+        a("redo", "Redo", ("Ctrl+Shift+Z", "Ctrl+Y"), self.redo, "redo")
+        a("edit_class", "Change class…", "Ctrl+E", self.edit_label, "tag")
+        a("duplicate", "Duplicate", "Ctrl+D", self.duplicate_shapes, "copy")
+        a("delete", "Delete", "Delete", self.delete_shapes, "trash")
+        a("select_all", "Select all", "Ctrl+A", lambda: self.canvas.select_all(), "grid")
+        a("rotate_left", "Rotate 15° left", "[", lambda: self.canvas.rotate_selected(-15), "rotate")
+        a("rotate_right", "Rotate 15° right", "]", lambda: self.canvas.rotate_selected(15), "rotate")
+        a("clear_all", "Clear all shapes", "Ctrl+Shift+Delete", self.clear_all, "clear")
+        a("zoom_in", "Zoom in", ("Ctrl+=", "Ctrl++"), lambda: self.canvas.zoom_in(), "zoom_in")
+        a("zoom_out", "Zoom out", "Ctrl+-", lambda: self.canvas.zoom_out(), "zoom_out")
+        a("zoom_fit", "Fit to window", "Ctrl+0", lambda: self.canvas.fit_to_view(), "zoom_fit")
+        a("zoom_selection", "Zoom to selection", "Ctrl+Shift+0",
+          lambda: self.canvas.zoom_to_selection(), "search")
+        a("toggle_labels", "Show class names", "L", self.toggle_labels, "tag", True)
+        a("toggle_theme", "Switch light / dark", "Ctrl+T", self.toggle_theme, "moon")
+        a("class_manager", "Class Manager…", "Ctrl+M", self.open_class_manager, "tag")
+        a("settings", "Settings…", "Ctrl+,", self.open_settings, "settings")
+        self.tool_group = QActionGroup(self)
+        self.tool_group.setExclusive(True)
+        for tool, text, key, icon in TOOLS:
+            action = a("tool_" + tool, text.split(" - ")[0].split("  (")[0], key,
+                       lambda t=tool: self.set_tool(t), icon, True)
+            action.setToolTip(text)
+            self.tool_group.addAction(action)
+        self.act("tool_select").setChecked(True)
+        for position, digit in enumerate(HOTKEY_DIGITS):
+            a("class_%d" % (position + 1), "Class %d" % (position + 1), digit,
+              lambda p=position: self.assign_class_by_index(p))
+
+    # ══════════════════════════════════════════════════════
+    # LAYOUT
+    # ══════════════════════════════════════════════════════
+    def _build_ui(self) -> None:
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(14, 12, 14, 10)
+        root.setSpacing(10)
+        root.addWidget(self._build_header())
+
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(8)
+        root.addWidget(self.splitter, 1)
+
+        column = QWidget()
+        column_layout = QVBoxLayout(column)
+        column_layout.setContentsMargins(0, 0, 0, 0)
+        column_layout.setSpacing(8)
+        frame = QFrame()
+        frame.setObjectName("Card")
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(4, 4, 4, 4)
+        self.canvas = ShapeCanvas()
+        self.canvas.set_colour_provider(self.colour_for)
+        frame_layout.addWidget(self.canvas)
+        column_layout.addWidget(frame, 1)
+        self.filmstrip = FilmStrip()
+        self.filmstrip.empty_text = "No folder open"
+        column_layout.addWidget(self.filmstrip)
+        self.splitter.addWidget(column)
+
+        self.side = self._build_side()
+        self.splitter.addWidget(self.side)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+        self.splitter.setSizes([1000, 350])
+
+        self._build_statusbar()
+        self._wire()
+
+    def _dock(self):
+        frame = QFrame()
+        frame.setObjectName("Toolbar")
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(6, 5, 6, 5)
+        layout.setSpacing(3)
+        return frame, layout
+
+    def _button_for(self, action_id, checkable=False) -> QPushButton:
+        action = self.act(action_id)
+        button = QPushButton()
+        button.setObjectName("Tool")
+        button.setCheckable(checkable)
+        button.setFixedSize(34, 32)
+        button.setIconSize(QSize(19, 19))
+        keys = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+        tip = action.toolTip() or action.text()
+        button.setToolTip("%s%s" % (tip, ("   [%s]" % keys) if keys else ""))
+        button.clicked.connect(action.trigger)
+        return button
+
+    def _build_header(self) -> QWidget:
+        header = QWidget()
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        titles = QVBoxLayout()
+        titles.setSpacing(0)
+        title = QLabel(APP_NAME)
+        title.setObjectName("Title")
+        self.folder_label = QLabel(APP_TAGLINE)
+        self.folder_label.setObjectName("Subtitle")
+        titles.addWidget(title)
+        titles.addWidget(self.folder_label)
+        layout.addLayout(titles, 1)
+
+        self.tool_bar, tool_row = self._dock()
+        self.tool_buttons = {}
+        for tool, _text, _key, _icon in TOOLS:
+            button = self._button_for("tool_" + tool, checkable=True)
+            self.tool_buttons[tool] = button
+            tool_row.addWidget(button)
+        layout.addWidget(self.tool_bar)
+
+        self.edit_bar, edit_row = self._dock()
+        self.edit_buttons = {}
+        for action_id in ("undo", "redo", "duplicate", "delete"):
+            button = self._button_for(action_id)
+            self.edit_buttons[action_id] = button
+            edit_row.addWidget(button)
+        layout.addWidget(self.edit_bar)
+
+        self.window_bar, window_row = self._dock()
+        self.window_buttons = {}
+        for action_id in ("class_manager", "export", "settings"):
+            button = self._button_for(action_id)
+            self.window_buttons[action_id] = button
+            window_row.addWidget(button)
+        layout.addWidget(self.window_bar)
+        return header
+
+    def _build_side(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("Panel")
+        panel.setMinimumWidth(300)
+        panel.setMaximumWidth(440)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        holder = QWidget()
+        layout = QVBoxLayout(holder)
+        layout.setContentsMargins(14, 14, 14, 6)
+        layout.setSpacing(12)
+        self.active_chip = ActiveClassChip()
+        self.active_chip.caption.setText("Next shape")
+        layout.addWidget(self.active_chip)
+        self.palette = ClassPalette()
+        layout.addWidget(self.palette, 3)
+        self.shape_panel = ShapeListPanel()
+        layout.addWidget(self.shape_panel, 2)
+        scroll.setWidget(holder)
+
+        footer = QWidget()
+        foot = QVBoxLayout(footer)
+        foot.setContentsMargins(14, 6, 14, 14)
+        foot.setSpacing(10)
+        foot.addWidget(divider())
+        self.stats_panel = StatsPanel(fields=(
+            ("total", "Images", "title", None),
+            ("labelled", "Labelled", "good", "good"),
+            ("background", "Background", "sub", "info"),
+            ("todo", "Remaining", "accent", "border")))
+        foot.addWidget(self.stats_panel)
+        self.save_button = QPushButton("Save")
+        self.save_button.setObjectName("Primary")
+        self.save_button.setToolTip("Save this image  [Ctrl+S]  ·  an image saved with no "
+                                    "shapes counts as background")
+        self.save_button.clicked.connect(self.act("save").trigger)
+        foot.addWidget(self.save_button)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(6)
+        self.prev_button = QPushButton("Previous")
+        self.prev_button.setToolTip("Previous image  [A]")
+        self.prev_button.clicked.connect(self.act("prev_image").trigger)
+        self.next_button = QPushButton("Next")
+        self.next_button.setToolTip("Next image  [D]  ·  saves this one")
+        self.next_button.clicked.connect(self.act("next_image").trigger)
+        self.verify_button = QPushButton("Verified")
+        self.verify_button.setCheckable(True)
+        self.verify_button.setToolTip("Mark this image as checked  [Ctrl+Shift+V]")
+        self.verify_button.clicked.connect(self.act("verify").trigger)
+        for button in (self.prev_button, self.next_button, self.verify_button):
+            buttons.addWidget(button)
+        foot.addLayout(buttons)
+
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(scroll, 1)
+        outer.addWidget(footer)
+        return panel
+
+    def _build_statusbar(self) -> None:
+        bar = QStatusBar()
+        bar.setSizeGripEnabled(False)
+        self.setStatusBar(bar)
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("Hint")
+        bar.addWidget(self.status_label, 1)
+        self.coord_label = QLabel("")
+        self.coord_label.setObjectName("Mono")
+        bar.addPermanentWidget(self.coord_label)
+        self.zoom_label = QLabel("100%")
+        self.zoom_label.setObjectName("Mono")
+        bar.addPermanentWidget(self.zoom_label)
+        self.progress_label = QLabel("")
+        self.progress_label.setObjectName("Subtitle")
+        bar.addPermanentWidget(self.progress_label)
+
+    def _wire(self) -> None:
+        canvas = self.canvas
+        canvas.shapesChanged.connect(self._on_shapes_changed)
+        canvas.selectionChanged.connect(self._on_selection_changed)
+        canvas.statusMessage.connect(self._status)
+        canvas.shapeDrawn.connect(self._guard_arg(self.on_shape_drawn))
+        canvas.editLabelRequested.connect(self._guard(self.edit_label))
+        canvas.zoomChanged.connect(lambda pct: self.zoom_label.setText("%d%%" % round(pct)))
+        canvas.cursorMoved.connect(lambda x, y: self.coord_label.setText("x %d  y %d" % (x, y)))
+        self.filmstrip.imagePicked.connect(self.go_to_index)
+        self.palette.classChosen.connect(self._on_palette_class)
+        self.palette.manageRequested.connect(self._guard(self.open_class_manager))
+        panel = self.shape_panel
+        panel.selectionRequested.connect(lambda rows: canvas.select_indices(rows))
+        panel.editRequested.connect(self._guard(self.edit_label))
+        panel.duplicateRequested.connect(self._guard(self.duplicate_shapes))
+        panel.deleteRequested.connect(self._guard(self.delete_shapes))
+        panel.lockToggled.connect(lambda rows, value: (canvas.set_locked(rows, value),
+                                                       self._refresh_side()))
+        panel.visibilityToggled.connect(lambda rows, value: (canvas.set_visible(rows, value),
+                                                             self._refresh_side()))
+
+    def _guard_arg(self, handler):
+        def run(value):
+            try:
+                handler(value)
+            except Exception as exc:
+                traceback.print_exc()
+                self._status("Something went wrong: %s" % exc, "danger")
+        return run
+
+    def _build_menus(self) -> None:
+        bar = self.menuBar()
+        file_menu = bar.addMenu("&File")
+        file_menu.addAction(self.act("open_folder"))
+        self.recent_menu = file_menu.addMenu("Recent folders")
+        self._rebuild_recent()
+        file_menu.addSeparator()
+        for action_id in ("save", "verify", "export"):
+            file_menu.addAction(self.act(action_id))
+        file_menu.addSeparator()
+        if self.host is not None:
+            home = QAction("Home", self)
+            home.triggered.connect(lambda: self.host.go_home())
+            file_menu.addAction(home)
+        quit_action = QAction("Quit", self)
+        quit_action.triggered.connect(lambda: self.host.quit() if self.host is not None else self.close())
+        file_menu.addAction(quit_action)
+
+        edit = bar.addMenu("&Edit")
+        for group in (("undo", "redo"), ("edit_class", "duplicate", "delete", "select_all"),
+                      ("rotate_left", "rotate_right"), ("clear_all",)):
+            for action_id in group:
+                edit.addAction(self.act(action_id))
+            edit.addSeparator()
+
+        tools = bar.addMenu("&Tools")
+        for tool, _text, _key, _icon in TOOLS:
+            tools.addAction(self.act("tool_" + tool))
+
+        view = bar.addMenu("&View")
+        for group in (("zoom_in", "zoom_out", "zoom_fit", "zoom_selection"),
+                      ("toggle_labels", "toggle_theme")):
+            for action_id in group:
+                view.addAction(self.act(action_id))
+            view.addSeparator()
+
+        go = bar.addMenu("&Go")
+        go.addAction(self.act("next_image"))
+        go.addAction(self.act("prev_image"))
+
+        window = bar.addMenu("&Window")
+        window.addAction(self.act("class_manager"))
+        window.addAction(self.act("settings"))
+
+    def _rebuild_recent(self) -> None:
+        self.recent_menu.clear()
+        recent = [f for f in (self.settings.get("recent_folders") or []) if os.path.isdir(f)]
+        for folder in recent[:10]:
+            action = self.recent_menu.addAction(folder)
+            action.triggered.connect(lambda _c=False, f=folder: self.open_folder(f))
+        self.recent_menu.setEnabled(bool(recent))
+
+    # ══════════════════════════════════════════════════════
+    # THEME & SETTINGS
+    # ══════════════════════════════════════════════════════
+    def _apply_theme(self) -> None:
+        icons.clear_cache()
+        theme = self.theme
+        apply_palette(self.app, theme)
+        self.app.setStyleSheet(stylesheet(theme))
+        self.setWindowIcon(icons.app_icon(theme["accent"], theme["appBg"], "shapes"))
+        for widget in (self.canvas, self.filmstrip, self.stats_panel, self.palette,
+                       self.active_chip, self.shape_panel):
+            widget.set_theme(theme)
+        for tool, button in self.tool_buttons.items():
+            button.setIcon(icons.dual_icon(self.act("tool_" + tool).data(), theme["text"],
+                                           theme["onAccent"], 19))
+        for action_id, button in list(self.edit_buttons.items()) + list(self.window_buttons.items()):
+            colour = theme["danger"] if action_id == "delete" else theme["text"]
+            button.setIcon(icons.icon(self.act(action_id).data(), colour, 19))
+        for action in self.actions_by_id.values():
+            if action.data():
+                action.setIcon(icons.icon(action.data(), theme["text"], 16))
+        self._paint_status()
+        self._refresh_active_chip()
+
+    def _apply_settings(self) -> None:
+        self.canvas.set_options(
+            fill_opacity=int(self.settings.get("fill_opacity", 22)),
+            line_width=int(self.settings.get("line_width", 2)),
+            show_labels=bool(self.settings.get("show_labels", True)),
+            show_crosshair=bool(self.settings.get("show_crosshair", True)))
+        self.act("toggle_labels").setChecked(bool(self.settings.get("show_labels", True)))
+
+    def tool_apply_theme(self, name) -> None:
+        self.settings.set("theme", name)
+        self.theme = resolve_theme(name, self.app)
+        self._apply_theme()
+        self._refresh_side()
+
+    def toggle_theme(self) -> None:
+        name = "light" if self.theme["name"] == "dark" else "dark"
+        if self.host is not None:
+            self.host.request_theme(name)
+        else:
+            self.tool_apply_theme(name)
+        self._status("Switched to the %s theme" % name, "info")
+
+    def toggle_labels(self) -> None:
+        value = not bool(self.settings.get("show_labels", True))
+        self.settings.set("show_labels", value)
+        self._apply_settings()
+
+    def open_settings(self) -> None:
+        dialog = ShapesSettingsDialog(self, self.settings)
+        if dialog.exec() != Dialog.DialogCode.Accepted:
+            return
+        self.settings.update(dialog.result_values())
+        if self.host is not None:
+            self.host.request_theme(self.settings.get("theme", "dark"))
+        else:
+            self.tool_apply_theme(self.settings.get("theme", "dark"))
+        self._apply_settings()
+        self._status("Settings saved", "good")
+
+    # ══════════════════════════════════════════════════════
+    # STATUS
+    # ══════════════════════════════════════════════════════
+    def _status(self, message, level="info") -> None:
+        self._status_level = level
+        self.status_label.setText(str(message))
+        self._paint_status()
+
+    def _paint_status(self) -> None:
+        names = {"info": "Hint", "good": "HintGood", "warning": "HintWarn", "danger": "HintDanger"}
+        self.status_label.setObjectName(names.get(self._status_level, "Hint"))
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
+
+    # ══════════════════════════════════════════════════════
+    # CLASSES
+    # ══════════════════════════════════════════════════════
+    def project(self):
+        return self.class_store.active_project()
+
+    def colour_for(self, label) -> str:
+        entry = self.project().by_name(label) if label else None
+        return entry.color if entry is not None else color_for_name(label or "?")
+
+    def refresh_class_ui(self) -> None:
+        project = self.project()
+        active = project.active_classes()
+        self.hotkey_order = [entry.name for entry in active]
+        self.class_hotkeys = {entry.name: HOTKEY_DIGITS[i]
+                              for i, entry in enumerate(active[:len(HOTKEY_DIGITS)])}
+        self.palette.set_entries(active, self.class_hotkeys, "%s · %d" % (project.name, len(active)))
+        if self.current_class and project.by_name(self.current_class) is None:
+            self.current_class = None
+        if self.current_class:
+            self.palette.select_name(self.current_class)
+        self._refresh_active_chip()
+        self.canvas.update()
+        self._refresh_side()
+
+    def _refresh_active_chip(self) -> None:
+        if not hasattr(self, "active_chip"):
+            return
+        name = self.current_class
+        self.active_chip.set_class(name, self.colour_for(name) if name else "",
+                                   self.class_hotkeys.get(name, "") if name else "")
+
+    def register_class(self, name):
+        project = self.project()
+        entry = project.by_name(name)
+        if entry is None:
+            entry = project.merge_name(name)
+            self.class_store.save()
+            self.refresh_class_ui()
+            self._status("Added class \"%s\" (ID %d)" % (entry.name, entry.id), "good")
+        return entry
+
+    def ensure_classes(self, labels) -> None:
+        project = self.project()
+        missing = [label for label in labels if label and project.by_name(label) is None]
+        if missing:
+            for label in missing:
+                project.merge_name(label)
+            self.class_store.save()
+            self.refresh_class_ui()
+
+    def set_current_class(self, name, announce=True) -> None:
+        if not name:
+            return
+        self.current_class = name
+        self.settings.set("last_class", name)
+        self.palette.select_name(name)
+        self._refresh_active_chip()
+        if announce:
+            key = self.class_hotkeys.get(name)
+            self._status("Active class: %s%s" % (name, "   [%s]" % key if key else ""), "info")
+
+    def apply_class_choice(self, name) -> None:
+        selected = self.canvas.selected_indices()
+        if selected and not self.read_only:
+            changed = self.canvas.relabel(selected, name)
+            if changed:
+                self._status("%d shape(s) changed to %s" % (changed, name), "good")
+        self.set_current_class(name, announce=not selected)
+
+    def assign_class_by_index(self, index) -> None:
+        if not (0 <= index < len(self.hotkey_order)):
+            self._status("No class is bound to that key", "warning")
+            return
+        self.apply_class_choice(self.hotkey_order[index])
+
+    def _on_palette_class(self, name) -> None:
+        self.apply_class_choice(name)
+        self.canvas.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def ask_label(self, current="", title="Class for the new shape"):
+        label = LabelDialog.ask(self, self.project().active_classes(), current, title)
+        if label:
+            self.register_class(label)
+        return label
+
+    def on_shape_drawn(self, shape) -> None:
+        if self.settings.get("skip_label_dialog", True) and self.current_class:
+            label = self.current_class
+        else:
+            label = self.ask_label(self.current_class or "")
+            if not label:
+                self._status("Shape discarded - no class chosen", "info")
+                return
+        shape.label = label
+        if self.canvas.add_shape(shape, "Draw %s" % KIND_LABELS[shape.kind].lower()):
+            if self.settings.get("sticky_class", True):
+                self.set_current_class(label, announce=False)
+            self._status("%s added as %s" % (KIND_LABELS[shape.kind], label), "good")
+
+    def edit_label(self) -> None:
+        selected = self.canvas.selected_indices()
+        if not selected:
+            self._status("Select a shape first", "warning")
+            return
+        if self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return
+        label = self.ask_label(self.canvas.shapes[selected[0]].label, "Change class")
+        if label:
+            self.canvas.relabel(selected, label)
+            if self.settings.get("sticky_class", True):
+                self.set_current_class(label, announce=False)
+
+    def open_class_manager(self) -> None:
+        dialog = ClassManagerDialog(self, self.class_store, search_dirs=[])
+        dialog.exec()
+        if dialog.changed:
+            self.apply_class_changes(list(dialog.renames) + list(dialog.reassignments))
+
+    def apply_class_changes(self, pairs) -> None:
+        """Save the class store and carry renamed / reassigned classes into
+        every shape file of the open folder."""
+        self.class_store.save()
+        pairs = [(old, new) for old, new in pairs if old != new]
+        if pairs and self.folder:
+            if not self._commit_current():
+                self._status("Could not save this image, so the class change was not "
+                             "written to the files", "danger")
+            else:
+                files = 0
+                for old, new in pairs:
+                    files += rename_label(self.folder, self.images, old, new)
+                if self.current_class in dict(pairs):
+                    self.current_class = dict(pairs)[self.current_class]
+                self._load_image(self.index)
+                self._status("Classes updated in %d file(s)" % files, "good")
+        self.refresh_class_ui()
+
+    # ══════════════════════════════════════════════════════
+    # FOLDERS
+    # ══════════════════════════════════════════════════════
+    def choose_folder(self) -> None:
+        start = self.folder or (self.settings.get("recent_folders") or [""])[0]
+        folder = QFileDialog.getExistingDirectory(self, "Choose the folder of images",
+                                                  start or os.path.expanduser("~"))
+        if folder:
+            self.open_folder(folder)
+
+    def open_folder(self, folder) -> None:
+        folder = os.path.abspath(str(folder))
+        if self.folder and not self._commit_current():
+            return
+        if not os.path.isdir(folder):
+            self._status("That folder no longer exists", "danger")
+            return
+        writable, why = folder_is_writable(folder)
+        if not writable:
+            answer = QMessageBox.question(
+                self, "Read-only folder",
+                "This folder cannot be written to:\n%s\n\nOpen it read-only?" % why)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        note = ""
+        if writable:
+            acquired, message = self.lock.acquire(folder)
+            if not acquired:
+                answer = QMessageBox.question(
+                    self, "Folder in use",
+                    "%s\n\nTwo sessions saving the same shapes can overwrite each other's "
+                    "work.\nOpen it anyway?" % message)
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                self.lock.acquire(folder, force=True)
+                note = "lock overridden - close the other session"
+            elif message:
+                note = message
+        elif self.lock.held:
+            self.lock.release()
+
+        self.read_only = not writable
+        self.canvas.read_only = self.read_only
+        self.folder = folder
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.images = scan_images(folder)
+            self.summary = {}
+            for rel in self.images:
+                self._summarise(rel)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.index = 0
+        self.folder_label.setText(folder + ("   ·   read-only" if self.read_only else ""))
+        self.settings.push_recent(folder)
+        self._rebuild_recent()
+
+        annotated = sum(1 for count, _v in self.summary.values() if count is not None)
+        if not self.images:
+            self._status("No supported images in this folder", "warning")
+        else:
+            message = "%d image(s), %d with shapes files" % (len(self.images), annotated)
+            self._status(message + ("  ·  " + note if note else ""), "warning" if note else "good")
+        self.filmstrip.set_batch(folder, self.images, self._statuses())
+        self._load_image(0)
+
+    def _summarise(self, rel) -> None:
+        result = read_annotation(self.folder, rel)
+        if not result.found or result.error:
+            self.summary[rel] = (None, False)
+        else:
+            self.summary[rel] = (len(result.shapes), result.verified)
+
+    def _statuses(self):
+        out = {}
+        for rel in self.images:
+            count, verified = self.summary.get(rel, (None, False))
+            if count is None:
+                out[rel] = "todo"
+            elif verified:
+                out[rel] = "verified"
+            else:
+                out[rel] = "labelled" if count else "background"
+        return out
+
+    # ══════════════════════════════════════════════════════
+    # IMAGES
+    # ══════════════════════════════════════════════════════
+    def current_rel(self):
+        if 0 <= self.index < len(self.images):
+            return self.images[self.index]
+        return None
+
+    def _load_image(self, index) -> None:
+        if not self.images:
+            self.canvas.load_image(None)
+            self.saved, self.image_ok = None, False
+            self.history.reset([])
+            self._after_load()
+            return
+        self.index = max(0, min(int(index), len(self.images) - 1))
+        rel = self.images[self.index]
+        reader = QImageReader(os.path.join(self.folder, rel))
+        reader.setAutoTransform(True)
+        image = reader.read()
+        if image.isNull():
+            self.canvas.load_image(None)
+            self.saved, self.image_ok = None, False
+            self.history.reset([])
+            self._status("%s could not be read: %s" % (rel, reader.errorString()), "danger")
+            self._after_load()
+            return
+        result = read_annotation(self.folder, rel)
+        if result.error:
+            self._status(result.error + " - it is kept until you change this image", "warning")
+        elif result.skipped:
+            self._status("%d shape(s) in this file could not be read" % result.skipped, "warning")
+        self.ensure_classes({s.label for s in result.shapes})
+        self.image_ok = True
+        self.saved = [s.copy() for s in result.shapes] if (result.found and not result.error) else None
+        self.saved_verified = self.verified = bool(result.verified)
+        self.canvas.load_image(QPixmap.fromImage(image), result.shapes)
+        self.canvas.fit_to_view()
+        self.history.reset(self.canvas.snapshot())
+        self._after_load()
+
+    def _after_load(self) -> None:
+        self.filmstrip.set_index(self.index)
+        self.verify_button.setChecked(self.verified)
+        self.act("verify").setChecked(self.verified)
+        self._refresh_side()
+        self._update_stats()
+        self._sync_actions()
+
+    def go_to_index(self, index) -> None:
+        if index == self.index and self.image_ok:
+            return
+        if self._commit_current():
+            self._load_image(index)
+
+    def next_image(self) -> None:
+        if not self.images:
+            return
+        if self.index + 1 >= len(self.images):
+            if self._commit_current():
+                self._status("That was the last image", "info")
+            return
+        if self._commit_current():
+            self._load_image(self.index + 1)
+
+    def prev_image(self) -> None:
+        if self.images and self.index > 0 and self._commit_current():
+            self._load_image(self.index - 1)
+
+    def set_tool(self, tool) -> None:
+        if tool != T_SELECT and tool != T_PAN and not self.canvas.has_image():
+            self._status("Open a folder first", "warning")
+            tool = T_SELECT
+        self.canvas.set_tool(tool)
+        self.act("tool_" + tool).setChecked(True)
+        for name, button in self.tool_buttons.items():
+            button.setChecked(name == tool)
+        text = next(t for key, t, _k, _i in TOOLS if key == tool)
+        self._status(text, "info")
+
+    # ══════════════════════════════════════════════════════
+    # CANVAS FEEDBACK & EDITING
+    # ══════════════════════════════════════════════════════
+    def _on_shapes_changed(self, label) -> None:
+        self.history.push(label, self.canvas.snapshot())
+        self._refresh_side()
+        self._sync_actions()
+
+    def _on_selection_changed(self) -> None:
+        self.shape_panel.set_selection(self.canvas.selected_indices())
+        self._sync_actions()
+
+    def _refresh_side(self) -> None:
+        if not hasattr(self, "shape_panel"):
+            return
+        self.shape_panel.set_shapes(self.canvas.shapes, self.colour_for,
+                                    self.canvas.selected_indices())
+
+    def undo(self) -> None:
+        if self.canvas.is_drawing():
+            self.canvas.cancel_draft()
+            return
+        step = self.history.undo()
+        if step is None:
+            self._status("Nothing to undo", "info")
+            return
+        label, snapshot = step
+        self.canvas.set_shapes(snapshot)
+        self._status("Undid: %s" % label, "info")
+        self._refresh_side()
+        self._sync_actions()
+
+    def redo(self) -> None:
+        step = self.history.redo()
+        if step is None:
+            self._status("Nothing to redo", "info")
+            return
+        label, snapshot = step
+        self.canvas.set_shapes(snapshot)
+        self._status("Redid: %s" % label, "info")
+        self._refresh_side()
+        self._sync_actions()
+
+    def delete_shapes(self) -> None:
+        count = self.canvas.delete_selected()
+        self._status("%d shape(s) deleted - Ctrl+Z brings them back" % count if count
+                     else "Select a shape first", "good" if count else "warning")
+
+    def duplicate_shapes(self) -> None:
+        count = self.canvas.duplicate_selected()
+        self._status("%d shape(s) duplicated" % count if count else "Select a shape first",
+                     "good" if count else "warning")
+
+    def clear_all(self) -> None:
+        if not self.canvas.shapes:
+            return
+        answer = QMessageBox.question(self, "Clear all shapes",
+                                      "Remove all %d shapes from this image?\n\nCtrl+Z brings "
+                                      "them back." % len(self.canvas.shapes))
+        if answer == QMessageBox.StandardButton.Yes:
+            self._status("%d shape(s) cleared" % self.canvas.clear_all(), "good")
+
+    # ══════════════════════════════════════════════════════
+    # SAVING
+    # ══════════════════════════════════════════════════════
+    def is_dirty(self) -> bool:
+        if not self.image_ok or self.read_only:
+            return False
+        shapes = self.canvas.shapes
+        if self.saved is None:
+            return bool(shapes) or self.verified
+        return not shapes_match(shapes, self.saved) or self.verified != self.saved_verified
+
+    def _write_current(self) -> bool:
+        rel = self.current_rel()
+        if rel is None or not self.image_ok:
+            return False
+        width, height = self.canvas.image_size
+        shapes = self.canvas.snapshot()
+        ok, error = write_annotation(self.folder, rel, shapes, width, height, self.verified)
+        if not ok:
+            self._status("Could not save %s: %s" % (rel, error), "danger")
+            return False
+        self.saved = [s.copy() for s in shapes]
+        self.saved_verified = self.verified
+        self.summary[rel] = (len(shapes), self.verified)
+        self._update_stats()
+        return True
+
+    def _commit_current(self) -> bool:
+        """Write the image on screen if it changed.  False = the write failed."""
+        if self.canvas.is_drawing():
+            self.canvas.cancel_draft(quiet=True)
+        if not self.is_dirty():
+            return True
+        return self._write_current()
+
+    def save_current(self) -> None:
+        if not self.image_ok:
+            self._status("Open an image first", "warning")
+            return
+        if self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return
+        if self._write_current():
+            count = len(self.canvas.shapes)
+            self._status("Saved %s  ·  %s" % (self.current_rel(), "%d shape(s)" % count
+                                              if count else "background"), "good")
+
+    def toggle_verified(self) -> None:
+        if not self.image_ok or self.read_only:
+            self.verify_button.setChecked(self.verified)
+            return
+        self.verified = not self.verified
+        self.verify_button.setChecked(self.verified)
+        self.act("verify").setChecked(self.verified)
+        if self._write_current():
+            self._status("Marked verified" if self.verified else "Verified mark removed", "good")
+
+    # ══════════════════════════════════════════════════════
+    # EXPORT
+    # ══════════════════════════════════════════════════════
+    def open_export(self) -> None:
+        if not self.folder:
+            self._status("Open a folder first", "warning")
+            return
+        if not self._commit_current():
+            return
+        annotated = sum(1 for count, _v in self.summary.values() if count is not None)
+        dialog = ExportDialog(self, self.settings, len(self.images), annotated)
+        if dialog.exec() != Dialog.DialogCode.Accepted:
+            return
+        values = dialog.values()
+        self.settings.update(values)
+        report = self.export_with(values["export_task"], values["curve_segments"],
+                                  values["export_background"])
+        box = QMessageBox(self)
+        box.setWindowTitle("Export finished" if report.ok else "Export finished with problems")
+        box.setText("%s\n\n%s" % (report.summary(), report.path))
+        if report.errors:
+            box.setDetailedText("\n".join(report.errors))
+        open_button = box.addButton("Open folder", QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Close)
+        box.exec()
+        if box.clickedButton() is open_button:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(report.path))
+
+    def export_with(self, task=TASK_SEGMENT, segments=CURVE_SEGMENTS, background=True):
+        if not self._commit_current():
+            raise RuntimeError("the current image could not be saved")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            if task == TASK_COCO:
+                report = exporting.export_coco(self.folder, self.images, self.project(),
+                                               segments, background)
+            else:
+                report = exporting.export_yolo(self.folder, self.images, self.project(),
+                                               TASK_OBB if task == TASK_OBB else TASK_SEGMENT,
+                                               segments, background)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._status("Exported %s" % report.summary(), "good" if report.ok else "warning")
+        return report
+
+    # ══════════════════════════════════════════════════════
+    # REFRESH
+    # ══════════════════════════════════════════════════════
+    def _update_stats(self) -> None:
+        total = len(self.images)
+        labelled = sum(1 for count, _v in self.summary.values() if count)
+        background = sum(1 for count, _v in self.summary.values() if count == 0)
+        self.stats_panel.set_values(total, labelled, background,
+                                    max(0, total - labelled - background))
+        self.filmstrip.set_statuses(self._statuses())
+        rel = self.current_rel()
+        self.progress_label.setText("Image %d / %d   ·   %s" % (self.index + 1, total, rel)
+                                    if total and rel else "")
+
+    def _sync_actions(self) -> None:
+        has_batch = bool(self.images)
+        has_image = self.image_ok and self.canvas.has_image()
+        writable = has_image and not self.read_only
+        selection = bool(self.canvas.selection)
+        for action_id in ("next_image", "prev_image", "export"):
+            self.act(action_id).setEnabled(has_batch)
+        for action_id in ("save", "verify", "select_all", "clear_all"):
+            self.act(action_id).setEnabled(writable)
+        for action_id in ("edit_class", "duplicate", "delete", "rotate_left", "rotate_right"):
+            self.act(action_id).setEnabled(writable and selection)
+        for action_id in ("zoom_in", "zoom_out", "zoom_fit", "zoom_selection"):
+            self.act(action_id).setEnabled(has_image)
+        self.act("undo").setEnabled(self.history.can_undo)
+        self.act("redo").setEnabled(self.history.can_redo)
+        for action_id, button in list(self.edit_buttons.items()) + list(self.window_buttons.items()):
+            button.setEnabled(self.act(action_id).isEnabled())
+        for tool, button in self.tool_buttons.items():
+            button.setEnabled(has_image and (tool in (T_SELECT, T_PAN) or not self.read_only))
+        for button in (self.save_button, self.verify_button):
+            button.setEnabled(writable)
+        self.prev_button.setEnabled(has_batch and self.index > 0)
+        self.next_button.setEnabled(has_batch)
+
+    # ══════════════════════════════════════════════════════
+    # LIFECYCLE
+    # ══════════════════════════════════════════════════════
+    def tool_activated(self) -> None:
+        self.canvas.setFocus()
+
+    def tool_deactivating(self) -> bool:
+        if self._commit_current():
+            return True
+        answer = QMessageBox.question(
+            self, "Unsaved work",
+            "This image could not be saved.\n\nLeave anyway? The changes to it will be lost.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        return answer == QMessageBox.StandardButton.Yes
+
+    def tool_open(self, folder) -> None:
+        self.open_folder(folder)
+
+    def tool_close(self) -> bool:
+        if getattr(self, "_closed", False):
+            return True
+        if not self._commit_current():
+            answer = QMessageBox.question(
+                self, "Unsaved work",
+                "This image could not be saved.\n\nClose anyway? The changes to it will be lost.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
+        try:
+            if self.host is None:
+                self.settings.data["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode("ascii")
+            self.settings.data["class_project"] = self.class_store.active_project_name
+            self.settings.save()
+            self.class_store.save()
+            self.filmstrip.shutdown()
+            self.lock.release()
+        except Exception:
+            traceback.print_exc()
+        self._closed = True
+        return True
+
+    def _restore_geometry(self) -> None:
+        try:
+            raw = self.settings.get("window_geometry", "")
+            if raw:
+                self.restoreGeometry(QByteArray.fromBase64(raw.encode("ascii")))
+                return
+            screen = self.app.primaryScreen().availableGeometry()
+            self.resize(min(1600, int(screen.width() * 0.86)), min(1000, int(screen.height() * 0.86)))
+        except Exception:
+            self.resize(1280, 820)
+
+    def closeEvent(self, event):
+        if self.tool_close():
+            event.accept()
+        else:
+            event.ignore()

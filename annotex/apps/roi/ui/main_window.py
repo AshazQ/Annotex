@@ -373,7 +373,7 @@ class MainWindow(QMainWindow):
         window_row.setSpacing(3)
         self.window_buttons = {}
         for action_id in ("review_mode", "dashboard", "settings",
-                          "shortcuts_sheet", "toggle_theme"):
+                          "shortcuts_sheet"):
             action = self.act(action_id)
             button = QPushButton()
             button.setObjectName("Tool")

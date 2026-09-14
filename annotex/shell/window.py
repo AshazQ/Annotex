@@ -126,13 +126,6 @@ class ShellWindow(QMainWindow):
         self.jobs_button.setToolTip("Background jobs from every tool")
         self.jobs_button.clicked.connect(self.show_jobs)
         layout.addWidget(self.jobs_button)
-        self.theme_button = QPushButton()
-        self.theme_button.setObjectName("Tool")
-        self.theme_button.setFixedSize(32, 30)
-        self.theme_button.setIconSize(QSize(18, 18))
-        self.theme_button.setToolTip("Switch light / dark for every tool")
-        self.theme_button.clicked.connect(self.toggle_theme)
-        layout.addWidget(self.theme_button)
         return bar
 
     def _build_actions(self) -> None:
@@ -182,8 +175,6 @@ class ShellWindow(QMainWindow):
         for spec in self.tools:
             self.tool_tabs[spec.id].setIcon(icons.dual_icon(spec.icon, theme["sub"], theme["title"], 16))
         self.jobs_button.setIcon(icons.icon("history", theme["sub"], 16))
-        self.theme_button.setIcon(icons.icon("sun" if theme["name"] == "dark" else "moon",
-                                             theme["text"], 18))
         self.home.set_theme(theme)
         for page in self.pages.values():
             apply = getattr(page, "tool_apply_theme", None)

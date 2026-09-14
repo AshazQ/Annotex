@@ -2,13 +2,14 @@
 
 Annotation, video and image tools behind one dashboard. Open Annotex, pick a
 tool from **Home**, and every tool shares the same look, the same keyboard
-habits (Ctrl+T theme, Ctrl+Shift+H Home, Ctrl+1…8 to jump to a tool), one
+habits (Ctrl+T theme, Ctrl+Shift+H Home, Ctrl+1…9 to jump to a tool), one
 background job queue and the same safe-saving rules.
 
 | Section | Tool | What it is for |
 |---|---|---|
 | Annotation | **ROI Studio** | Polygon ROI annotation for fixed-camera batches; xlsx + JSON outputs; COCO / YOLO-seg / VOC / mask export. |
 | Annotation | **LabelImg Master** | Bounding-box labelling and review; class projects with permanent IDs; Pascal VOC, YOLO, CreateML written byte for byte as LabelImg always has. |
+| Annotation | **LabelImg Shapes** | Polygons, oriented boxes, circles, ellipses and freehand outlines; editable shape files; YOLO segmentation, YOLO OBB and COCO export. |
 | Video | **Video to Images** | Frames every N seconds, N per second, every Nth frame, on scene change - or scrub and grab. |
 | Video | **Video Trimmer** | Mark pieces with I / O; fast lossless or frame-accurate cuts; separate files or joined. |
 | Video | **Video Converter** | MP4 H.264 / H.265, WebM VP9, MKV, AVI; resolution, frame rate, quality or target size. |
@@ -36,7 +37,7 @@ AI sorting.
 | Command | What it does |
 |---|---|
 | `python run.py` | the Home dashboard |
-| `python run.py --tool <id>` | straight into a tool: `roi`, `labelimg`, `frames`, `trim`, `vconvert`, `merge`, `iconvert`, `sorter` |
+| `python run.py --tool <id>` | straight into a tool: `roi`, `labelimg`, `shapes`, `frames`, `trim`, `vconvert`, `merge`, `iconvert`, `sorter` |
 | `python run.py --tool roi <folder>` | a tool with a folder open |
 | `python run.py --selftest` | verify every tool on this machine, no display needed |
 | `python run.py --check` | versions of Python, Qt, Pillow, lxml, ffmpeg, onnxruntime |
@@ -49,14 +50,15 @@ AI sorting.
 
 ## The shell
 
-A slim bar across the top holds **Home**, a tab for each tool you have opened,
-the jobs indicator and the theme switch. Tools stay exactly where you left them
-while you move between them.
+A slim bar across the top holds **Home**, a tab for each tool you have opened
+and the jobs indicator. Tools stay exactly where you left them while you move
+between them. Light / dark lives in each tool's **Settings** (the gear), its
+**View** menu and **Ctrl+T**, and always applies to every tool.
 
 | Key | |
 |---|---|
 | Ctrl+Shift+H | Home, from any tool |
-| Ctrl+1 … Ctrl+8 | open a tool (numbers follow the order on Home) |
+| Ctrl+1 … Ctrl+9 | open a tool (numbers follow the order on Home) |
 | Ctrl+J | every background job, from every tool |
 | Ctrl+T | light / dark, for every tool at once |
 | Ctrl+Q | quit - asks first if jobs are still running |
@@ -203,6 +205,50 @@ report, per-batch settings (`.labelimg.json`).
 
 ---
 
+## LabelImg Shapes
+
+A separate tool for everything that is not an upright box. LabelImg Master is
+untouched, and the two keep separate class lists.
+
+| Key | |
+|---|---|
+| **P** | polygon - click points; click the first point, Enter or right-click to close |
+| **O** | oriented box - drag it out, then turn it with the round handle |
+| **C** | circle - drag out from the centre |
+| **E** | ellipse - drag its box (Shift for a circle), then turn it |
+| **F** | freehand - hold the button and trace the outline |
+| **V** / **H** (or hold Space) | select / pan |
+| **1 … 9, 0** | pick a class; with a shape selected, relabel it |
+| **[** / **]** | rotate the selection 15° (Shift while dragging snaps to 15°) |
+| **D** / **A** | next / previous image - leaving an image saves it |
+| **Ctrl+S** | save (an image saved with no shapes counts as background) |
+| **Ctrl+Z** / **Ctrl+Y** | undo / redo |
+| **Ctrl+E** / **Ctrl+D** / **Del** | change class / duplicate / delete |
+| **Ctrl+M** / **Ctrl+Shift+E** | Class Manager / export |
+
+With the select tool: drag a shape to move it; oriented boxes and ellipses have
+eight handles that resize along their own axes, circles have four that change
+the radius; polygons and freehand outlines show their points - drag one,
+Ctrl+click to delete it, double-click an edge to add one.
+
+**Files.** Each image gets `name.shapes.json` beside it, holding the shapes
+exactly as drawn (a circle keeps its centre and radius, an oriented box its
+angle), so everything stays editable. Writes are atomic, the previous version
+is kept in `.labelimg_shapes_backup/`, and a lock file stops two sessions
+colliding.
+
+**Export** (Ctrl+Shift+E) never changes the shape files:
+
+| Export | Folder | What you get |
+|---|---|---|
+| YOLO segmentation | `export_yolo_seg/` | every shape as a polygon (circles and ellipses sampled); `labels/`, `classes.txt`, `data.yaml` |
+| YOLO oriented boxes | `export_yolo_obb/` | oriented boxes as drawn, other shapes as their tightest rotated box |
+| COCO | `export_coco_shapes/annotations.json` | segmentation, bbox and area, plus the exact shape of each annotation |
+
+YOLO class numbers are the Class Manager's permanent IDs, counted from 0.
+
+---
+
 ## ROI Studio
 
 Unchanged in behaviour and outputs, and it still reads its own settings file.
@@ -231,9 +277,10 @@ Annotex/
 │   └── apps/
 │       ├── roi/            ROI Studio
 │       ├── labelimg/       LabelImg Master
+│       ├── shapes/         LabelImg Shapes
 │       ├── video/          Video to Images, Trimmer, Converter, Merger
 │       └── images/         Image Converter, Image Sorter
-└── tests/                  roi/, labelimg/, media/, shell/, run_all.py
+└── tests/                  roi/, labelimg/, shapes/, media/, shell/, run_all.py
 ```
 
 ### Adding a tool

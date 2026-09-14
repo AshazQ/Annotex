@@ -26,7 +26,8 @@ PACKAGES = (("PySide6", "PySide6-Essentials", "the user interface"),
             ("PIL", "pillow", "reading images"),
             ("openpyxl", "openpyxl", "ROI Studio's spreadsheet"),
             ("lxml", "lxml", "LabelImg Master's Pascal VOC files"))
-TOOL_IDS = ("roi", "labelimg", "frames", "trim", "vconvert", "merge", "iconvert", "sorter")
+TOOL_IDS = ("roi", "labelimg", "shapes", "frames", "trim", "vconvert", "merge", "iconvert",
+            "sorter")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -102,10 +103,12 @@ def run_selftests() -> int:
     from .apps.images.selftest import run_selftest as images_selftest
     from .apps.labelimg.selftest import run_selftest as labelimg_selftest
     from .apps.roi.selftest import run_selftest as roi_selftest
+    from .apps.shapes.selftest import run_selftest as shapes_selftest
     from .apps.video.selftest import run_selftest as video_selftest
     failures = 0
     for name, test in (("ROI Studio", roi_selftest), ("LabelImg Master", labelimg_selftest),
-                       ("Video tools", video_selftest), ("Image tools", images_selftest)):
+                       ("LabelImg Shapes", shapes_selftest), ("Video tools", video_selftest),
+                       ("Image tools", images_selftest)):
         print("\n%s" % name)
         failures += 1 if test() else 0
     print("\n%s" % ("ALL SELF TESTS PASSED" if not failures

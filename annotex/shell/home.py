@@ -154,12 +154,6 @@ class HomePage(QWidget):
         titles.addWidget(title)
         titles.addWidget(subtitle)
         hero.addLayout(titles, 1)
-        self.theme_button = QPushButton("Theme")
-        self.theme_button.setObjectName("Quiet")
-        self.theme_button.setIconSize(QSize(17, 17))
-        self.theme_button.setToolTip("Switch light / dark for every tool  [Ctrl+T]")
-        self.theme_button.clicked.connect(self.themeToggleRequested.emit)
-        hero.addWidget(self.theme_button, 0, Qt.AlignmentFlag.AlignTop)
         body.addLayout(hero)
 
         numbers = {spec.id: index for index, spec in enumerate(self.tools, start=1)}
@@ -209,9 +203,6 @@ class HomePage(QWidget):
 
     def set_theme(self, theme) -> None:
         self.hero_mark.setPixmap(icons.mark_pixmap("suite", theme["accent"], theme["surfaceAlt"], 60))
-        self.theme_button.setIcon(icons.icon("sun" if theme["name"] == "dark" else "moon",
-                                             theme["text"], 17))
-        self.theme_button.setText("Light theme" if theme["name"] == "dark" else "Dark theme")
         for card in self.cards:
             card.set_theme(theme)
 

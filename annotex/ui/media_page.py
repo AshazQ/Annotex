@@ -111,7 +111,6 @@ class MediaToolPage(QMainWindow):
         self.jobs.jobAdded.connect(lambda _job: self._sync_jobs_label())
 
         self.build()
-        self.add_dock_button("moon", "Switch light / dark  [Ctrl+T]", self.toggle_theme)
         self._build_menus()
         self._apply_theme()
         if host is None:

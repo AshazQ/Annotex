@@ -59,7 +59,11 @@ app.processEvents()
 
 try:
     ok("starts on Home", shell.stack.currentWidget() is shell.home)
-    ok("a card per tool", len(shell.home.cards) == 8)
+    ok("a card per tool", len(shell.home.cards) == 9)
+    ok("LabelImg Shapes sits with the annotation tools",
+       [c.spec.id for c in shell.home.sections[0][2] if hasattr(c, "spec")] == ["roi", "labelimg", "shapes"])
+    ok("no theme button on Home or the bar", not hasattr(shell.home, "theme_button")
+       and not hasattr(shell, "theme_button"))
     ok("three sections", [s[0] for s in shell.home.sections] == ["Annotation", "Video", "Images"])
     ok("no tool tabs until a tool is opened", not any(t.isVisible() for t in shell.tool_tabs.values()))
     ok("Home tab checked", shell.home_tab.isChecked())

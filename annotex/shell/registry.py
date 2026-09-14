@@ -71,6 +71,17 @@ def _labelimg_recent():
     return [f for f in (Settings().get("recent_folders") or []) if os.path.isdir(f)]
 
 
+def _shapes_create(host):
+    from ..apps.shapes.config import Settings
+    from ..apps.shapes.ui.window import ShapesWindow
+    return ShapesWindow(Settings(), host.app, host=host)
+
+
+def _shapes_recent():
+    from ..apps.shapes.config import Settings
+    return [f for f in (Settings().get("recent_folders") or []) if os.path.isdir(f)]
+
+
 def _page(module, name):
     def create(host):
         return getattr(importlib.import_module(module), name)(host.app, host=host)
@@ -80,6 +91,7 @@ def _page(module, name):
 def _tools():
     from ..apps.labelimg.config import APP_VERSION as LABELIMG_VERSION
     from ..apps.roi.config import APP_VERSION as ROI_VERSION
+    from ..apps.shapes.config import APP_VERSION as SHAPES_VERSION
     media = "1.0.0"
     return [
         ToolSpec("roi", "ROI Studio", "Polygon ROI annotation",
@@ -95,6 +107,13 @@ def _tools():
                  "annotation", "rect", LABELIMG_VERSION,
                  ("Permanent class IDs", "VOC / YOLO / CreateML"),
                  _labelimg_create, _labelimg_recent),
+        ToolSpec("shapes", "LabelImg Shapes", "Polygons, oriented boxes, circles and more",
+                 "Label objects with polygons, oriented boxes, circles, ellipses and freehand "
+                 "outlines. Shapes stay editable, and export to YOLO segmentation, YOLO OBB "
+                 "or COCO.",
+                 "annotation", "shapes", SHAPES_VERSION,
+                 ("Editable shapes", "YOLO seg / OBB / COCO"),
+                 _shapes_create, _shapes_recent),
         ToolSpec("frames", "Video to Images", "Turn footage into frames",
                  "Save a frame every few seconds, every Nth frame or whenever the scene changes "
                  "- or scrub through and grab exactly the frames you want.",

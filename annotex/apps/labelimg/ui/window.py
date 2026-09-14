@@ -402,7 +402,7 @@ class LabelImgWindow(QMainWindow):
         self.window_bar, window_row = self._dock()
         self.window_buttons = {}
         for action_id in ("class_manager", "review_mode", "dashboard", "settings",
-                          "shortcuts_sheet", "toggle_theme"):
+                          "shortcuts_sheet"):
             button = self._tool_button(action_id)
             button.clicked.connect(self.act(action_id).trigger)
             self.window_buttons[action_id] = button
