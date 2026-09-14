@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QLabel, QRadi
                                QSlider, QSpinBox)
 
 from annotex.ui.dialogs.common import Dialog, card, hint, row
+from annotex.ui.theme_picker import ThemeCombo
 
 from ..config import (CURVE_SEGMENTS, EXPORT_COCO, EXPORT_YOLO_OBB, EXPORT_YOLO_SEG,
                       TASK_COCO, TASK_OBB, TASK_SEGMENT)
@@ -75,13 +76,10 @@ class ShapesSettingsDialog(Dialog):
         self.settings = settings
 
         frame, inner = card("Theme")
-        self.theme_box = QComboBox()
-        for value, text in (("dark", "Dark"), ("light", "Light"), ("system", "Follow the system")):
-            self.theme_box.addItem(text, value)
-        index = self.theme_box.findData(settings.get("theme", "dark"))
-        self.theme_box.setCurrentIndex(max(0, index))
+        self.theme_box = ThemeCombo(settings.get("theme", "dark"))
         inner.addWidget(row("Colours", self.theme_box, None))
-        inner.addWidget(hint("Applies to every tool.  Ctrl+T switches light and dark."))
+        inner.addWidget(hint("Applies to every tool, each in its own colour.  Ctrl+T switches to the "
+                             "theme's light or dark partner."))
         self.body.addWidget(frame)
 
         frame, inner = card("Drawing")

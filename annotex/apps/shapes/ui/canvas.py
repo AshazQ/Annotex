@@ -115,6 +115,11 @@ class ShapeCanvas(ImageViewport):
                 setattr(self, key, value)
         self.update()
 
+    def set_theme(self, theme: dict) -> None:
+        super().set_theme(theme)
+        self._colours["selected"] = theme.get("accent", CANVAS["selected"])
+        self.update()
+
     def set_colour_provider(self, provider) -> None:
         self._colour_provider = provider
         self.update()

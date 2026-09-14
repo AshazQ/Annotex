@@ -52,8 +52,27 @@ AI sorting.
 
 A slim bar across the top holds **Home**, a tab for each tool you have opened
 and the jobs indicator. Tools stay exactly where you left them while you move
-between them. Light / dark lives in each tool's **Settings** (the gear), its
-**View** menu and **Ctrl+T**, and always applies to every tool.
+between them.
+
+**Home** greets you, offers to **continue where you left off** (the last
+folders you worked in, with a thumbnail, how many images are annotated and a
+Resume button), and shows the annotation tools as large cards and the video
+and image tools as compact tiles.
+
+**Every tool has its own colour** - ROI Studio orange, LabelImg Master blue,
+LabelImg Shapes violet, Video to Images cyan, Trimmer red, Converter yellow,
+Merger pink, Image Converter green, Image Sorter teal - on its card, its tab,
+its buttons and its selection, so you always know where you are.
+
+**Themes.** Pick one in any tool's **Settings** (the gear) or its
+**View → Theme** menu; it applies to every tool, each still in its own colour.
+
+| Dark | Light |
+|---|---|
+| Annotex Dark, True Black (OLED), Dark Modern, Monokai, Dracula, One Dark, GitHub Dark, Solarized Dark, Nord, Gruvbox Dark, Catppuccin Mocha, Night Owl, Tokyo Night | Annotex Light, Light Modern, One Light, GitHub Light, Solarized Light, Gruvbox Light, Catppuccin Latte |
+
+**Ctrl+T** switches to the theme's partner (Dracula → Annotex Light,
+GitHub Dark ↔ GitHub Light, …). "Follow the system" is there too.
 
 | Key | |
 |---|---|

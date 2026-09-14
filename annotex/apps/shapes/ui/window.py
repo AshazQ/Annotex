@@ -27,7 +27,8 @@ from annotex.core.io_safe import FolderLock, folder_is_writable
 from annotex.ui import icons
 from annotex.ui.dialogs.common import Dialog
 from annotex.ui.filmstrip import FilmStrip
-from annotex.ui.palette import apply_palette, resolve_theme, stylesheet
+from annotex.ui.palette import install_theme, resolve_theme, toggled_setting
+from annotex.ui.theme_picker import theme_menu
 from annotex.ui.widgets import StatsPanel, divider
 
 from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, CURVE_SEGMENTS, HOTKEY_DIGITS,
@@ -59,7 +60,7 @@ class ShapesWindow(QMainWindow):
         self.host = host
         if host is not None:
             settings.data["theme"] = host.theme_setting
-        self.theme = resolve_theme(settings.get("theme", "dark"), app)
+        self.theme = resolve_theme(settings.get("theme", "dark"), app, tool="shapes")
 
         self.folder = ""
         self.images = []
@@ -414,6 +415,7 @@ class ShapesWindow(QMainWindow):
             for action_id in group:
                 view.addAction(self.act(action_id))
             view.addSeparator()
+        view.addMenu(theme_menu(self, self.settings.get("theme", "dark"), self.choose_theme))
 
         go = bar.addMenu("&Go")
         go.addAction(self.act("next_image"))
@@ -437,8 +439,7 @@ class ShapesWindow(QMainWindow):
     def _apply_theme(self) -> None:
         icons.clear_cache()
         theme = self.theme
-        apply_palette(self.app, theme)
-        self.app.setStyleSheet(stylesheet(theme))
+        install_theme(self, self.app, theme, self.host is not None)
         self.setWindowIcon(icons.app_icon(theme["accent"], theme["appBg"], "shapes"))
         for widget in (self.canvas, self.filmstrip, self.stats_panel, self.palette,
                        self.active_chip, self.shape_panel):
@@ -465,17 +466,23 @@ class ShapesWindow(QMainWindow):
 
     def tool_apply_theme(self, name) -> None:
         self.settings.set("theme", name)
-        self.theme = resolve_theme(name, self.app)
+        self.theme = resolve_theme(name, self.app, tool="shapes")
         self._apply_theme()
         self._refresh_side()
 
     def toggle_theme(self) -> None:
-        name = "light" if self.theme["name"] == "dark" else "dark"
+        name = toggled_setting(self.theme)
+        self.choose_theme(name)
+        self._status("Switched to the %s theme" % name, "info")
+
+    def choose_theme(self, name) -> None:
         if self.host is not None:
             self.host.request_theme(name)
         else:
             self.tool_apply_theme(name)
-        self._status("Switched to the %s theme" % name, "info")
+
+    def theme_setting_for_menu(self):
+        return self.settings.get("theme", "dark")
 
     def toggle_labels(self) -> None:
         value = not bool(self.settings.get("show_labels", True))

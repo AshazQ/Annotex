@@ -32,7 +32,7 @@ from annotex.ui.dialogs.common import Dialog
 from annotex.ui.dialogs.history_dialog import HistoryDialog
 from annotex.ui.dialogs.palette_dialog import CommandPalette, ShortcutSheet
 from annotex.ui.filmstrip import FilmStrip
-from annotex.ui.palette import apply_palette, resolve_theme, stylesheet
+from annotex.ui.palette import install_theme, resolve_theme, toggled_setting
 from annotex.ui.widgets import MiniMap, StatsPanel, divider, section_label
 
 from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, AUDIT_NAME, BACKUP_DIR,
@@ -88,7 +88,7 @@ class LabelImgWindow(QMainWindow):
         self.host = host
         if host is not None:
             settings.data["theme"] = host.theme_setting
-        self.theme = resolve_theme(settings.get("theme", "dark"), app)
+        self.theme = resolve_theme(settings.get("theme", "dark"), app, tool="labelimg")
 
         # ── state ─────────────────────────────────────────
         self.folder = ""
@@ -736,8 +736,7 @@ class LabelImgWindow(QMainWindow):
     # ══════════════════════════════════════════════════════
     def _apply_theme(self) -> None:
         icons.clear_cache()
-        apply_palette(self.app, self.theme)
-        self.app.setStyleSheet(stylesheet(self.theme))
+        install_theme(self, self.app, self.theme, self.host is not None)
         theme = self.theme
         self.setWindowIcon(icons.app_icon(theme["accent"], theme["appBg"], "box"))
         for widget in (self.canvas, self.filmstrip, self.minimap, self.stats_panel,
@@ -802,12 +801,12 @@ class LabelImgWindow(QMainWindow):
 
     def tool_apply_theme(self, name) -> None:
         self.settings.set("theme", name)
-        self.theme = resolve_theme(name, self.app)
+        self.theme = resolve_theme(name, self.app, tool="labelimg")
         self._apply_theme()
         self._refresh_side()
 
     def toggle_theme(self) -> None:
-        name = "light" if self.theme["name"] == "dark" else "dark"
+        name = toggled_setting(self.theme)
         if self.host is not None:
             self.host.request_theme(name)
         else:

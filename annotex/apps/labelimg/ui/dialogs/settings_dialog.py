@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QLabel, QMessageBox,
                                QWidget)
 
 from annotex.ui.dialogs.common import Dialog, card, hint, row
+from annotex.ui.theme_picker import ThemeCombo
 from annotex.ui.dialogs.keys import KeyBindingsEditor
 
 from ...config import DEFAULT_SETTINGS, FORMAT_LABELS, FORMATS
@@ -46,12 +47,7 @@ class SettingsDialog(Dialog):
         layout = QVBoxLayout(page)
         layout.setSpacing(12)
         frame, inner = card("Theme")
-        self.theme_box = QComboBox()
-        self.theme_box.addItem("Follow the system", "system")
-        self.theme_box.addItem("Dark", "dark")
-        self.theme_box.addItem("Light", "light")
-        self.theme_box.setCurrentIndex(max(0, self.theme_box.findData(
-            self.settings.get("theme", "dark"))))
+        self.theme_box = ThemeCombo(self.settings.get("theme", "dark"))
         inner.addWidget(row(QLabel("Appearance"), None, self.theme_box))
         inner.addWidget(hint("The theme is shared by every tool in the suite."))
         layout.addWidget(frame)

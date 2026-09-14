@@ -101,6 +101,26 @@ try:
     shell.go_home()
     app.processEvents()
     ok("back on Home", shell.stack.currentWidget() is shell.home)
+
+    from annotex.ui import palette
+    ok("every theme has every colour", all(key in theme for theme in palette.THEMES.values()
+                                           for key in palette.DARK))
+    ok("every theme keeps text readable", all(palette.contrast(t["text"], t["surface"]) >= 4.5
+                                              for t in palette.THEMES.values()))
+    ok("each tool has its own colour", page.theme["accent"] != roi.theme["accent"])
+    shell.request_theme("dracula")
+    app.processEvents()
+    ok("a VS Code theme reaches every tool", page.theme["id"] == "dracula" and roi.theme["id"] == "dracula"
+       and page.theme["accent"] == palette.THEMES["dracula"]["hues"]["blue"])
+    shell.toggle_theme()
+    ok("Ctrl+T goes to the theme's partner", shell.theme_setting == palette.THEMES["dracula"]["partner"])
+    shell.request_theme("dark")
+    app.processEvents()
+
+    shell.home.refresh(wait=True)
+    resume = [c for c in shell.home.continue_cards if c.session.tool_id == "labelimg"]
+    ok("Home offers to continue the LabelImg folder", bool(resume) and resume[0].session.folder == folder)
+    ok("and shows how far along it is", bool(resume) and (resume[0].session.total, resume[0].session.done) == (2, 1))
     labelimg_card = [card for card in shell.home.cards if card.spec.id == "labelimg"][0]
     links = [labelimg_card.recent_box.itemAt(i).widget()
              for i in range(labelimg_card.recent_box.count())]

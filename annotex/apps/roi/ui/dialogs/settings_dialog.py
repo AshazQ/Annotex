@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox,
 from ...config import CANON_COLUMNS
 from .. import shortcuts as sc
 from .common import ColourButton, Dialog, card, hint, row
+from annotex.ui.theme_picker import ThemeCombo
 
 
 class SettingsDialog(Dialog):
@@ -46,12 +47,7 @@ class SettingsDialog(Dialog):
         layout.setSpacing(12)
 
         frame, inner = card("Theme")
-        self.theme_box = QComboBox()
-        self.theme_box.addItem("Follow the system", "system")
-        self.theme_box.addItem("Dark", "dark")
-        self.theme_box.addItem("Light", "light")
-        index = self.theme_box.findData(self.settings.get("theme", "dark"))
-        self.theme_box.setCurrentIndex(max(0, index))
+        self.theme_box = ThemeCombo(self.settings.get("theme", "dark"))
         inner.addWidget(row(QLabel("Appearance"), None, self.theme_box))
         layout.addWidget(frame)
 

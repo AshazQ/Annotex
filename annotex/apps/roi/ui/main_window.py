@@ -36,7 +36,8 @@ from .dialogs.settings_dialog import SettingsDialog
 from .dialogs.transfer_dialog import ExportDialog, ImportDialog
 from .dialogs.welcome_dialog import AboutDialog, WelcomeDialog
 from .filmstrip import FilmStrip
-from .palette import apply_palette, resolve_theme, stylesheet
+from .palette import apply_palette, resolve_theme, stylesheet  # noqa: F401
+from annotex.ui.palette import install_theme, toggled_setting
 from .panels import (CommentBox, MiniMap, RoiListPanel, StatsPanel,
                      VertexInspector, divider)
 
@@ -81,7 +82,7 @@ class MainWindow(QMainWindow):
         self.host = host
         if host is not None:
             settings.data["theme"] = host.theme_setting
-        self.theme = resolve_theme(settings.get("theme", "dark"), app)
+        self.theme = resolve_theme(settings.get("theme", "dark"), app, tool="roi")
 
         # ── state ─────────────────────────────────────────
         self.folder = ""
@@ -596,8 +597,7 @@ class MainWindow(QMainWindow):
     # ══════════════════════════════════════════════════════
     def _apply_theme(self) -> None:
         icons.clear_cache()
-        apply_palette(self.app, self.theme)
-        self.app.setStyleSheet(stylesheet(self.theme))
+        install_theme(self, self.app, self.theme, self.host is not None)
         self.setWindowIcon(icons.app_icon(self.theme["accent"],
                                           self.theme["appBg"]))
         self.canvas.set_theme(self.theme)
@@ -668,7 +668,7 @@ class MainWindow(QMainWindow):
                     else FULL_VIEW)
 
     def toggle_theme(self) -> None:
-        name = "light" if self.theme["name"] == "dark" else "dark"
+        name = toggled_setting(self.theme)
         if self.host is not None:
             self.host.request_theme(name)       # every tool follows
         else:
@@ -1788,7 +1788,7 @@ class MainWindow(QMainWindow):
             return
         values = dialog.result_values()
         self.settings.update(values)
-        self.theme = resolve_theme(self.settings.get("theme", "dark"), self.app)
+        self.theme = resolve_theme(self.settings.get("theme", "dark"), self.app, tool="roi")
         self._rebind_shortcuts()
         self._apply_theme()
         self._apply_settings()
@@ -1947,7 +1947,7 @@ class MainWindow(QMainWindow):
     def tool_apply_theme(self, name) -> None:
         """The shell (or the theme toggle, standalone) sets the theme."""
         self.settings.set("theme", name)
-        self.theme = resolve_theme(name, self.app)
+        self.theme = resolve_theme(name, self.app, tool="roi")
         self._apply_theme()
         self._refresh_side()
 

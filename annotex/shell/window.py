@@ -26,7 +26,7 @@ from ..config import SUITE_NAME, ShellSettings
 from ..ui import icons
 from ..ui.dialogs.common import Dialog
 from ..ui.jobs import JobManager, JobQueuePanel
-from ..ui.palette import apply_palette, resolve_theme, stylesheet
+from ..ui.palette import apply_palette, resolve_theme, stylesheet, toggled_setting, with_tool
 from . import registry
 from .home import HomePage
 
@@ -162,7 +162,7 @@ class ShellWindow(QMainWindow):
         self._apply_theme()
 
     def toggle_theme(self) -> None:
-        self.request_theme("light" if self.theme["name"] == "dark" else "dark")
+        self.request_theme(toggled_setting(self.theme))
 
     def _apply_theme(self) -> None:
         icons.clear_cache()
@@ -173,7 +173,11 @@ class ShellWindow(QMainWindow):
         self.bar_mark.setPixmap(icons.mark_pixmap("suite", theme["accent"], theme["surfaceAlt"], 22))
         self.home_tab.setIcon(icons.dual_icon("home", theme["sub"], theme["title"], 16))
         for spec in self.tools:
-            self.tool_tabs[spec.id].setIcon(icons.dual_icon(spec.icon, theme["sub"], theme["title"], 16))
+            tool_theme = with_tool(theme, spec.id)
+            tab = self.tool_tabs[spec.id]
+            tab.setIcon(icons.dual_icon(spec.icon, tool_theme["accent"], tool_theme["accent"], 16))
+            tab.setStyleSheet("QPushButton#SuiteTab:checked { background: %s; color: %s; }"
+                              % (tool_theme["accentSoft"], theme["title"]))
         self.jobs_button.setIcon(icons.icon("history", theme["sub"], 16))
         self.home.set_theme(theme)
         for page in self.pages.values():

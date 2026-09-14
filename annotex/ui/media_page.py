@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (QFrame, QSizePolicy, QHBoxLayout, QLabel, QMainWi
 from ..config import JsonSettings, first_writable, user_data_dir
 from . import icons
 from .jobs import JobManager, JobQueuePanel
-from .palette import apply_palette, resolve_theme, stylesheet
+from .palette import install_theme, resolve_theme, toggled_setting
+from .theme_picker import theme_menu
 
 
 def tool_settings(tool_id, defaults, path=None):
@@ -43,7 +44,7 @@ class MediaToolPage(QMainWindow):
         self.settings = settings or tool_settings(self.TOOL_ID, self.DEFAULTS)
         if host is not None:
             self.settings.data["theme"] = host.theme_setting
-        self.theme = resolve_theme(self.settings.get("theme", "dark"), app)
+        self.theme = resolve_theme(self.settings.get("theme", "dark"), app, tool=self.TOOL_ID)
         self.jobs = jobs or getattr(host, "jobs", None) or JobManager(self)
         self._status_level = "info"
         self._header_buttons = []
@@ -111,6 +112,7 @@ class MediaToolPage(QMainWindow):
         self.jobs.jobAdded.connect(lambda _job: self._sync_jobs_label())
 
         self.build()
+        self.dock.setVisible(bool(self._header_buttons))
         self._build_menus()
         self._apply_theme()
         if host is None:
@@ -220,6 +222,7 @@ class MediaToolPage(QMainWindow):
         theme.triggered.connect(self.toggle_theme)
         view.addAction(theme)
         self.addAction(theme)
+        view.addMenu(theme_menu(self, self.settings.get("theme", "dark"), self.choose_theme))
         jobs = bar.addMenu("&Jobs")
         cancel = QAction("Cancel this tool's jobs", self)
         cancel.triggered.connect(lambda: self.jobs.cancel_all(self.TOOL_ID))
@@ -229,21 +232,25 @@ class MediaToolPage(QMainWindow):
         jobs.addAction(clear)
 
     def toggle_theme(self) -> None:
-        name = "light" if self.theme["name"] == "dark" else "dark"
+        self.choose_theme(toggled_setting(self.theme))
+
+    def choose_theme(self, name) -> None:
         if self.host is not None:
             self.host.request_theme(name)
         else:
             self.tool_apply_theme(name)
 
+    def theme_setting_for_menu(self):
+        return self.settings.get("theme", "dark")
+
     def tool_apply_theme(self, name) -> None:
         self.settings.set("theme", name)
-        self.theme = resolve_theme(name, self.app)
+        self.theme = resolve_theme(name, self.app, tool=self.TOOL_ID)
         self._apply_theme()
 
     def _apply_theme(self) -> None:
         theme = self.theme
-        apply_palette(self.app, theme)
-        self.app.setStyleSheet(stylesheet(theme))
+        install_theme(self, self.app, theme, self.host is not None)
         self.setWindowIcon(icons.app_icon(theme["accent"], theme["appBg"], self.MARK))
         for button, name in self._header_buttons:
             if name == "moon":
