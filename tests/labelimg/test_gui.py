@@ -27,16 +27,16 @@ from PySide6.QtCore import QEvent, QPointF, Qt                      # noqa: E402
 from PySide6.QtGui import QColor, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPixmap  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox             # noqa: E402
 
-from fluxbox.apps.labelimg.config import (BACKUP_DIR, COPY_DIR, DELETED_DIR,  # noqa: E402
+from annotex.apps.labelimg.config import (BACKUP_DIR, COPY_DIR, DELETED_DIR,  # noqa: E402
                                           FORMAT_VOC, FORMAT_YOLO,
                                           PROJECT_SETTINGS_NAME, Settings)
-from fluxbox.apps.labelimg.core.annotations import AnnotationFolder, pil_probe  # noqa: E402
-from fluxbox.apps.labelimg.core.class_store import ClassStore       # noqa: E402
-from fluxbox.apps.labelimg.core.model import Box                    # noqa: E402
-from fluxbox.apps.labelimg.ui import window as window_module        # noqa: E402
-from fluxbox.apps.labelimg.ui.canvas import T_BOX, T_SELECT         # noqa: E402
-from fluxbox.apps.labelimg.ui.dialogs import label_dialog           # noqa: E402
-from fluxbox.ui.dialogs.common import Dialog                        # noqa: E402
+from annotex.apps.labelimg.core.annotations import AnnotationFolder, pil_probe  # noqa: E402
+from annotex.apps.labelimg.core.class_store import ClassStore       # noqa: E402
+from annotex.apps.labelimg.core.model import Box                    # noqa: E402
+from annotex.apps.labelimg.ui import window as window_module        # noqa: E402
+from annotex.apps.labelimg.ui.canvas import T_BOX, T_SELECT         # noqa: E402
+from annotex.apps.labelimg.ui.dialogs import label_dialog           # noqa: E402
+from annotex.ui.dialogs.common import Dialog                        # noqa: E402
 
 FAILS = []
 
@@ -290,7 +290,7 @@ try:
        and os.path.isfile(os.path.join(folder, "SITE1_cam1_001.txt")))
 
     # ── apply to many ─────────────────────────────────────────
-    from fluxbox.apps.labelimg.ui.dialogs.batch_dialog import BatchApplyDialog
+    from annotex.apps.labelimg.ui.dialogs.batch_dialog import BatchApplyDialog
 
     class SameCamera(BatchApplyDialog):
         def exec(self):
@@ -311,7 +311,7 @@ try:
     window_module.BatchApplyDialog = BatchApplyDialog
 
     # ── review, dashboard, report, export, import ─────────────
-    from fluxbox.apps.labelimg.ui.dialogs.review_dialog import ReviewDialog
+    from annotex.apps.labelimg.ui.dialogs.review_dialog import ReviewDialog
     captured = {}
 
     class CapturedReview(ReviewDialog):
@@ -341,7 +341,7 @@ try:
     stats = w._stats()
     ok("stats add up", stats["totals"]["images"] == 5 and stats["totals"]["remaining"] == 0)
 
-    from fluxbox.apps.labelimg.ui.dialogs.transfer_dialog import (CocoExportDialog,
+    from annotex.apps.labelimg.ui.dialogs.transfer_dialog import (CocoExportDialog,
                                                                   ImportDialog,
                                                                   ImportReviewDialog)
 
@@ -426,12 +426,12 @@ try:
     shot(w, "labelimg_light.png")
     w.toggle_theme()
 
-    from fluxbox.apps.labelimg.ui.dialogs.class_manager import ClassManagerDialog
-    from fluxbox.apps.labelimg.ui.dialogs.review_dialog import DashboardDialog
-    from fluxbox.apps.labelimg.ui.dialogs.settings_dialog import SettingsDialog
-    from fluxbox.apps.labelimg.ui.dialogs.welcome_dialog import AboutDialog, WelcomeDialog
-    from fluxbox.ui.dialogs.palette_dialog import CommandPalette, ShortcutSheet
-    from fluxbox.apps.labelimg.ui import shortcuts as sc
+    from annotex.apps.labelimg.ui.dialogs.class_manager import ClassManagerDialog
+    from annotex.apps.labelimg.ui.dialogs.review_dialog import DashboardDialog
+    from annotex.apps.labelimg.ui.dialogs.settings_dialog import SettingsDialog
+    from annotex.apps.labelimg.ui.dialogs.welcome_dialog import AboutDialog, WelcomeDialog
+    from annotex.ui.dialogs.palette_dialog import CommandPalette, ShortcutSheet
+    from annotex.apps.labelimg.ui import shortcuts as sc
     for dialog in (ClassManagerDialog(w, store, w.annotation_dirs()),
                    SettingsDialog(w, settings),
                    DashboardDialog(w, w._stats(), w._session(), w.theme),

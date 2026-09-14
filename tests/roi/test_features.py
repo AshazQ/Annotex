@@ -9,10 +9,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtCore import Qt
-from fluxbox.apps.roi.config import Settings, PROJECT_SETTINGS_NAME, XLSX_NAME, PRINTED_DIR, NO_ROI_DIR
-from fluxbox.apps.roi.ui.main_window import MainWindow
-from fluxbox.apps.roi.ui.dialogs.batch_dialog import BatchApplyDialog
-from fluxbox.apps.roi.core.model import Shape
+from annotex.apps.roi.config import Settings, PROJECT_SETTINGS_NAME, XLSX_NAME, PRINTED_DIR, NO_ROI_DIR
+from annotex.apps.roi.ui.main_window import MainWindow
+from annotex.apps.roi.ui.dialogs.batch_dialog import BatchApplyDialog
+from annotex.apps.roi.core.model import Shape
 
 FAILS=[]
 def ok(l,c):

@@ -14,7 +14,7 @@ roi_map.json
 roi_report.html
 roi_coverage.json
 .roi_studio*
-.fluxbox*
+.annotex*
 no_roi/
 printed_roi/
 export_coco/

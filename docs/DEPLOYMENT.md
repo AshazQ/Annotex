@@ -1,4 +1,4 @@
-# Deploying FluxBox Suite to annotators
+# Deploying Annotex to annotators
 
 Three ways, from least to most effort for you.
 
@@ -6,7 +6,7 @@ Three ways, from least to most effort for you.
 
 Best when annotators have Python and can run one command.
 
-1. Copy the whole `FluxBox-Suite` folder to the machine (or clone it).
+1. Copy the whole `Annotex` folder to the machine (or clone it).
 2. On that machine:
    ```
    python bootstrap.py --shortcut
@@ -59,8 +59,8 @@ For a shared Python environment or a managed image:
 
 ```
 python -m pip install .
-fluxbox                      # the Home dashboard
-fluxbox --tool labelimg
+annotex                      # the Home dashboard
+annotex --tool labelimg
 ```
 
 ---
@@ -69,11 +69,11 @@ fluxbox --tool labelimg
 
 | What | Where |
 |---|---|
-| The suite's theme and window size | `~/.config/fluxbox/shell.json` (Windows: `%APPDATA%\FluxBox Suite`, macOS: `~/Library/Application Support/FluxBox Suite`) |
-| LabelImg Master settings | `…/fluxbox/labelimg/settings.json` |
+| The suite's theme and window size | `~/.config/annotex/shell.json` (Windows: `%APPDATA%\Annotex`, macOS: `~/Library/Application Support/Annotex`) |
+| LabelImg Master settings | `…/annotex/labelimg/settings.json` |
 | LabelImg Master class projects | `~/.labelImgMaster/class_projects.json` (unchanged, so existing projects carry over) |
 | ROI Studio settings | its original location (`~/.config/roi_studio/settings.json`) |
-| Crash reports | `…/fluxbox/recovery/` |
+| Crash reports | `…/annotex/recovery/` |
 
 Beside each batch of images LabelImg Master writes its annotations plus a few
 hidden housekeeping files: `.labelimg.lock`, `.labelimg_draft.json`,

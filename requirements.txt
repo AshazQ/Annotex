@@ -1,8 +1,13 @@
-# FluxBox Suite runtime dependencies.
+# Annotex runtime dependencies.
 # Install with:  python bootstrap.py      (recommended - builds .venv)
 #            or: python -m pip install -r requirements.txt
 
 PySide6-Essentials>=6.5   # user interface
-pillow>=9.0               # image decoding and previews
+pillow>=9.0               # images
 openpyxl>=3.0             # ROI Studio's .xlsx output
 lxml>=4.9                 # LabelImg Master's Pascal VOC files
+imageio-ffmpeg>=0.5       # a bundled ffmpeg for the video tools (Windows, macOS, Linux)
+
+# Optional - AI sorting in the Image Sorter:  python bootstrap.py --ai
+# onnxruntime>=1.17
+# numpy

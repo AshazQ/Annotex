@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-command setup for FluxBox Suite.
+"""One-command setup for Annotex.
 
 Creates a private virtual environment beside this file, installs everything
 the suite needs into it, verifies the result, and offers to create a desktop
@@ -28,15 +28,17 @@ import venv
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENV_DIR = os.path.join(HERE, ".venv")
 MIN_PYTHON = (3, 9)
-APP_NAME = "FluxBox Suite"
+APP_NAME = "Annotex"
 
 REQUIREMENTS = [
     ("PySide6-Essentials", ">=6.5", "the user interface"),
     ("pillow", ">=9.0", "reading images"),
     ("openpyxl", ">=3.0", "ROI Studio's spreadsheet"),
     ("lxml", ">=4.9", "LabelImg Master's Pascal VOC files"),
+    ("imageio-ffmpeg", ">=0.5", "ffmpeg for the video tools"),
 ]
-VERIFY_MODULES = ("PySide6", "PIL", "openpyxl", "lxml")
+VERIFY_MODULES = ("PySide6", "PIL", "openpyxl", "lxml", "imageio_ffmpeg")
+AI_PACKAGES = ["onnxruntime>=1.17", "numpy"]
 
 
 def _supports_colour() -> bool:
@@ -206,7 +208,7 @@ def make_shortcut(python: str) -> bool:
         applications = os.path.join(os.path.expanduser("~"), ".local", "share", "applications")
         try:
             os.makedirs(applications, exist_ok=True)
-            entry = os.path.join(applications, "fluxbox-suite.desktop")
+            entry = os.path.join(applications, "annotex.desktop")
             with open(entry, "w", encoding="utf-8") as fh:
                 fh.write("[Desktop Entry]\nType=Application\nName=%s\n"
                          "Comment=ROI Studio and LabelImg Master\n"
@@ -244,6 +246,8 @@ def main(argv=None) -> int:
                         help="install from this folder of .whl files")
     parser.add_argument("--no-selftest", action="store_true",
                         help="skip the offline verification step")
+    parser.add_argument("--ai", action="store_true",
+                        help="also install onnxruntime for AI sorting in the Image Sorter")
     args = parser.parse_args(argv)
 
     rule()
@@ -262,6 +266,8 @@ def main(argv=None) -> int:
         return 2
     if not pip_install(python, ["%s%s" % (n, s) for n, s, _w in REQUIREMENTS], args.offline):
         return 2
+    if args.ai and not pip_install(python, AI_PACKAGES, args.offline):
+        say("AI sorting could not be installed; everything else works", "warn")
     if not verify(python):
         say("Something is still missing. Try:  python bootstrap.py --upgrade", "fail")
         return 2

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FluxBox Suite launcher.
+"""Annotex launcher.
 
 Run this file.  It works from a checkout, from a virtual environment, or from
 a bundled executable, and it tells you plainly what is missing rather than
@@ -34,7 +34,7 @@ def _relaunch_in_venv():
     """If a private environment exists and this interpreter is not it, use it,
     so double-clicking run.py works even when the system Python has none of
     the dependencies."""
-    if os.environ.get("FLUXBOX_NO_RELAUNCH"):
+    if os.environ.get("ANNOTEX_NO_RELAUNCH"):
         return False
     target = _venv_python()
     if not target:
@@ -50,7 +50,7 @@ def _relaunch_in_venv():
         return False                      # this interpreter is already fine
     except Exception:
         pass
-    os.environ["FLUXBOX_NO_RELAUNCH"] = "1"
+    os.environ["ANNOTEX_NO_RELAUNCH"] = "1"
     try:
         os.execv(target, [target, os.path.abspath(__file__)] + sys.argv[1:])
     except Exception:
@@ -62,9 +62,9 @@ def main():
     if _relaunch_in_venv():
         return 0
     try:
-        from fluxbox.app import main as app_main
+        from annotex.app import main as app_main
     except Exception as exc:
-        print("FluxBox Suite could not load (%s).\n\n"
+        print("Annotex could not load (%s).\n\n"
               "Run the bootstrap script once to set everything up:\n\n"
               "    python bootstrap.py\n" % exc)
         return 2

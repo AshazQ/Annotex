@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DIST = os.path.join(ROOT, "dist")
 WORK = os.path.join(ROOT, "build", "_work")
-NAME = "FluxBox-Suite"
+NAME = "Annotex"
 
 
 def ensure_pyinstaller(python):
@@ -62,8 +62,8 @@ def main(argv=None):
     command = [python, "-m", "PyInstaller", "--name", NAME, "--distpath", DIST,
                "--workpath", WORK, "--specpath", WORK, "--noconfirm",
                "--onedir" if args.onedir else "--onefile",
-               "--add-data", "%s%sfluxbox/resources" % (
-                   os.path.join(ROOT, "fluxbox", "resources"), separator)]
+               "--add-data", "%s%sannotex/resources" % (
+                   os.path.join(ROOT, "annotex", "resources"), separator)]
     if not args.console:
         command.append("--windowed")
     for module in ("PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick",
@@ -73,6 +73,8 @@ def main(argv=None):
         command += ["--exclude-module", module]
     for module in ("PySide6.QtSvg", "lxml.etree", "lxml._elementpath"):
         command += ["--hidden-import", module]
+    # the bundled ffmpeg binary travels with the executable
+    command += ["--collect-binaries", "imageio_ffmpeg", "--collect-data", "imageio_ffmpeg"]
     command.append(os.path.join(ROOT, "run.py"))
 
     print("Building %s…" % NAME)

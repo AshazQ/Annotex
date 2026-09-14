@@ -13,10 +13,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QPointF, QEvent
 from PySide6.QtGui import QMouseEvent, QPixmap, QPainter, QColor, QLinearGradient
-from fluxbox.apps.roi.config import Settings, XLSX_NAME, JSON_NAME, MAP_NAME, PRINTED_DIR, NO_ROI_DIR
-from fluxbox.apps.roi.ui.main_window import MainWindow
-from fluxbox.apps.roi.ui.canvas import T_POLYGON, T_RECT, T_CIRCLE, T_SELECT, T_LASSO
-from fluxbox.apps.roi.core.model import Shape
+from annotex.apps.roi.config import Settings, XLSX_NAME, JSON_NAME, MAP_NAME, PRINTED_DIR, NO_ROI_DIR
+from annotex.apps.roi.ui.main_window import MainWindow
+from annotex.apps.roi.ui.canvas import T_POLYGON, T_RECT, T_CIRCLE, T_SELECT, T_LASSO
+from annotex.apps.roi.core.model import Shape
 
 OUT = os.environ.get("ROI_SHOT_DIR", tempfile.gettempdir())
 FAILS = []
@@ -167,7 +167,7 @@ ok("shapes map present", "UBBRAP0006_3" in full["shapes"])
 w.export_now(); app.processEvents()
 ok("html report written", os.path.isfile(os.path.join(tmp, "roi_report.html")))
 ok("coverage json written", os.path.isfile(os.path.join(tmp, "roi_coverage.json")))
-from fluxbox.apps.roi.core import exporters
+from annotex.apps.roi.core import exporters
 rep = exporters.run_exports(["coco", "yolo", "voc", "masks"], w.store.rows, tmp)
 ok("format exports ok", rep.ok)
 
@@ -183,11 +183,11 @@ _img.save(os.path.join(OUT, "shot_light.png"))
 w.toggle_theme(); app.processEvents()
 
 # ── dialogs open without error ────────────────────────────────
-from fluxbox.apps.roi.ui.dialogs.review_dialog import ReviewDialog, DashboardDialog, HistoryDialog
-from fluxbox.apps.roi.ui.dialogs.settings_dialog import SettingsDialog
-from fluxbox.apps.roi.ui.dialogs.palette_dialog import CommandPalette, ShortcutSheet
-from fluxbox.apps.roi.ui.dialogs.welcome_dialog import WelcomeDialog, AboutDialog
-from fluxbox.apps.roi.ui.dialogs.transfer_dialog import ExportDialog, ImportDialog
+from annotex.apps.roi.ui.dialogs.review_dialog import ReviewDialog, DashboardDialog, HistoryDialog
+from annotex.apps.roi.ui.dialogs.settings_dialog import SettingsDialog
+from annotex.apps.roi.ui.dialogs.palette_dialog import CommandPalette, ShortcutSheet
+from annotex.apps.roi.ui.dialogs.welcome_dialog import WelcomeDialog, AboutDialog
+from annotex.apps.roi.ui.dialogs.transfer_dialog import ExportDialog, ImportDialog
 
 d = ReviewDialog(w, tmp, w.image_files, w._statuses(), w.theme); d.show(); app.processEvents()
 d.grab().save(os.path.join(OUT, "shot_review.png")); ok("review dialog", True); d.close()

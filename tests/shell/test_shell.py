@@ -11,25 +11,25 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-SANDBOX = tempfile.mkdtemp(prefix="fluxbox_shell_")
+SANDBOX = tempfile.mkdtemp(prefix="annotex_shell_")
 os.environ["HOME"] = SANDBOX
 os.environ["XDG_CONFIG_HOME"] = os.path.join(SANDBOX, "config")
 # Each tool shows a one-time welcome tour; mark it seen so nothing modal
 # blocks a headless run.
-for sub in ("roi_studio", os.path.join("fluxbox", "labelimg")):
+for sub in ("roi_studio", os.path.join("annotex", "labelimg")):
     os.makedirs(os.path.join(SANDBOX, "config", sub), exist_ok=True)
     with open(os.path.join(SANDBOX, "config", sub, "settings.json"), "w") as handle:
         handle.write('{"first_run_done": true}')
-OUT = os.environ.get("FLUXBOX_SHOT_DIR", "")
+OUT = os.environ.get("ANNOTEX_SHOT_DIR", "")
 
 from PySide6.QtGui import QColor, QPixmap                            # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox              # noqa: E402
 
-from fluxbox.apps.labelimg.core.model import Box                     # noqa: E402
-from fluxbox.apps.labelimg.ui.window import LabelImgWindow           # noqa: E402
-from fluxbox.apps.roi.ui.main_window import MainWindow as RoiWindow  # noqa: E402
-from fluxbox.config import ShellSettings                             # noqa: E402
-from fluxbox.shell.window import ShellWindow                         # noqa: E402
+from annotex.apps.labelimg.core.model import Box                     # noqa: E402
+from annotex.apps.labelimg.ui.window import LabelImgWindow           # noqa: E402
+from annotex.apps.roi.ui.main_window import MainWindow as RoiWindow  # noqa: E402
+from annotex.config import ShellSettings                             # noqa: E402
+from annotex.shell.window import ShellWindow                         # noqa: E402
 
 FAILS = []
 
@@ -59,7 +59,9 @@ app.processEvents()
 
 try:
     ok("starts on Home", shell.stack.currentWidget() is shell.home)
-    ok("a card per tool", len(shell.home.cards) == 2)
+    ok("a card per tool", len(shell.home.cards) == 8)
+    ok("three sections", [s[0] for s in shell.home.sections] == ["Annotation", "Video", "Images"])
+    ok("no tool tabs until a tool is opened", not any(t.isVisible() for t in shell.tool_tabs.values()))
     ok("Home tab checked", shell.home_tab.isChecked())
     if OUT:
         shell.grab().save(os.path.join(OUT, "shell_home_dark.png"))

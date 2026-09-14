@@ -3,9 +3,9 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fluxbox-suite"
+name = "annotex"
 version = "1.0.0"
-description = "Annotation and review tools behind one dashboard: ROI Studio and LabelImg Master"
+description = "Annotation, video and image tools behind one dashboard"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -13,16 +13,18 @@ dependencies = [
     "pillow>=9.0",
     "openpyxl>=3.0",
     "lxml>=4.9",
+    "imageio-ffmpeg>=0.5",
 ]
 
 [project.scripts]
-fluxbox = "fluxbox.app:main"
+annotex = "annotex.app:main"
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
+ai = ["onnxruntime>=1.17", "numpy"]
 
 [tool.setuptools.packages.find]
-include = ["fluxbox*"]
+include = ["annotex*"]
 
 [tool.setuptools.package-data]
-fluxbox = ["resources/**/*"]
+annotex = ["resources/**/*"]
