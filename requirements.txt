@@ -1,0 +1,8 @@
+# FluxBox Suite runtime dependencies.
+# Install with:  python bootstrap.py      (recommended - builds .venv)
+#            or: python -m pip install -r requirements.txt
+
+PySide6-Essentials>=6.5   # user interface
+pillow>=9.0               # image decoding and previews
+openpyxl>=3.0             # ROI Studio's .xlsx output
+lxml>=4.9                 # LabelImg Master's Pascal VOC files

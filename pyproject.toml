@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fluxbox-suite"
+version = "1.0.0"
+description = "Annotation and review tools behind one dashboard: ROI Studio and LabelImg Master"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "PySide6-Essentials>=6.5",
+    "pillow>=9.0",
+    "openpyxl>=3.0",
+    "lxml>=4.9",
+]
+
+[project.scripts]
+fluxbox = "fluxbox.app:main"
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+
+[tool.setuptools.packages.find]
+include = ["fluxbox*"]
+
+[tool.setuptools.package-data]
+fluxbox = ["resources/**/*"]

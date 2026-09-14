@@ -1,0 +1,24 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+build/_work/
+dist/
+*.spec
+.DS_Store
+Thumbs.db
+
+# batch outputs, if a folder of images ever lives inside the project
+roi_annotations.*
+roi_map.json
+roi_report.html
+roi_coverage.json
+.roi_studio*
+.fluxbox*
+no_roi/
+printed_roi/
+export_coco/
+export_yolo/
+export_voc/
+export_masks/
+copy_images/
