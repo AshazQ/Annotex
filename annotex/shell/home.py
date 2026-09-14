@@ -58,20 +58,30 @@ class _Lift:
 
     def _init_lift(self):
         self._lift_colour = QColor(0, 0, 0, 90)
-        self._lift_style = ""
         self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        # One effect for the card's whole life, only switched on and off.
+        # Creating or deleting it from enter/leave crashed the application:
+        # Qt sends Leave while it is hiding Home to show a tool, and deleting
+        # the effect (a child object) in the middle of that walk over the
+        # children is a use-after-free inside Qt.
+        self._lift = QGraphicsDropShadowEffect()
+        self._lift.setBlurRadius(34)
+        self._lift.setOffset(0, 8)
+        self._lift.setEnabled(False)
+        self.setGraphicsEffect(self._lift)
 
     def enterEvent(self, event):
-        effect = QGraphicsDropShadowEffect(self)
-        effect.setBlurRadius(34)
-        effect.setOffset(0, 8)
-        effect.setColor(self._lift_colour)
-        self.setGraphicsEffect(effect)
+        self._lift.setColor(self._lift_colour)
+        self._lift.setEnabled(True)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self.setGraphicsEffect(None)
+        self._lift.setEnabled(False)
         super().leaveEvent(event)
+
+    def hideEvent(self, event):
+        self._lift.setEnabled(False)
+        super().hideEvent(event)
 
 
 def _card_style(object_name, t) -> str:
@@ -236,10 +246,10 @@ class FeatureCard(_Lift, QFrame):
             item = self.recent_box.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                # Hide and detach now: deleteLater alone leaves the old link
-                # painted over the card until the event loop gets to it.
+                # Hide now - deleteLater alone leaves the old link painted over
+                # the card until the event loop gets to it.  Qt deletes it later;
+                # never drop it from Python mid-event.
                 widget.hide()
-                widget.setParent(None)
                 widget.deleteLater()
         if not folders:
             empty = QLabel("Nothing yet - open a folder to start.")

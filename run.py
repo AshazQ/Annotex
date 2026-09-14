@@ -64,6 +64,10 @@ def _relaunch_in_venv():
 def main():
     if _relaunch_in_venv():
         return 0
+    # A crash inside Qt's C++ code otherwise ends with a bare "Segmentation
+    # fault"; this prints the Python call stack that led to it.
+    import faulthandler
+    faulthandler.enable(all_threads=True)
     try:
         from annotex.app import main as app_main
     except Exception as exc:

@@ -117,6 +117,27 @@ try:
     shell.request_theme("dark")
     app.processEvents()
 
+    # Regression: hovering a card used to create its shadow effect on Enter
+    # and delete it on Leave; Qt sends Leave while hiding Home for a tool, and
+    # that deletion crashed the app (segfault in QWidgetPrivate::hideChildren).
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+    hovered = shell.home.cards[0]
+    effect = hovered.graphicsEffect()
+    child_count = len(hovered.children())
+    app.sendEvent(hovered, QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+    ok("hover switches the card's glow on", effect is not None and effect.isEnabled())
+    ok("hover creates nothing under the card", hovered.graphicsEffect() is effect
+       and len(hovered.children()) == child_count)
+    shell.open_tool("labelimg")
+    app.processEvents()
+    app.sendEvent(hovered, QEvent(QEvent.Type.Leave))
+    ok("leaving Home while hovering deletes nothing and switches the glow off",
+       hovered.graphicsEffect() is effect and not effect.isEnabled()
+       and len(hovered.children()) == child_count)
+    shell.go_home()
+    app.processEvents()
+
     shell.home.refresh(wait=True)
     resume = [c for c in shell.home.continue_cards if c.session.tool_id == "labelimg"]
     ok("Home offers to continue the LabelImg folder", bool(resume) and resume[0].session.folder == folder)
