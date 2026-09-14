@@ -83,14 +83,30 @@ def check_python() -> bool:
     return True
 
 
+def venv_moved(root: str = VENV_DIR) -> bool:
+    """True when .venv was created somewhere else and then moved or renamed
+    with its folder: its activate script and pip still point at the old path,
+    so `source .venv/bin/activate` silently falls back to the system Python."""
+    activate = os.path.join(root, "Scripts" if os.name == "nt" else "bin", "activate")
+    try:
+        with open(activate, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+    except OSError:
+        return False
+    return os.path.abspath(root) not in text
+
+
 def create_venv(upgrade: bool = False) -> str:
     python = venv_python()
-    if os.path.isfile(python) and not upgrade:
+    moved = os.path.isfile(python) and venv_moved()
+    if os.path.isfile(python) and not upgrade and not moved:
         say("Using the existing environment in .venv", "ok")
         return python
+    if moved:
+        say("The .venv folder was moved from another location - rebuilding it", "warn")
     say("Creating a private environment in .venv", "step")
     try:
-        venv.EnvBuilder(with_pip=True, clear=False, upgrade=upgrade).create(VENV_DIR)
+        venv.EnvBuilder(with_pip=True, clear=moved, upgrade=upgrade and not moved).create(VENV_DIR)
     except Exception as exc:
         say("Could not create the environment: %s" % exc, "fail")
         if sys.platform.startswith("linux"):

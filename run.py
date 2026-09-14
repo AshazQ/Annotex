@@ -39,8 +39,11 @@ def _relaunch_in_venv():
     target = _venv_python()
     if not target:
         return False
+    # Compare environments, not interpreter files: a venv's python is a symlink
+    # to the system one, so their real paths are identical.
     try:
-        if os.path.realpath(sys.executable) == os.path.realpath(target):
+        if os.path.normcase(os.path.realpath(sys.prefix)) == os.path.normcase(
+                os.path.realpath(os.path.join(HERE, ".venv"))):
             return False
     except Exception:
         return False

@@ -236,7 +236,12 @@ try:
     live = [r for r in sorter.runs(output) if r[2]]
     ok("undo a run", live and sorter.undo_run(output, live[0][0]) == 3)
 
-    if ai.available():
+    try:
+        import onnx  # noqa: F401  - only needed to build the test models
+        have_onnx = True
+    except ImportError:
+        have_onnx = False
+    if ai.available() and have_onnx:
         classifier, _detector = _onnx_models(SANDBOX)
         sorter_page.tabs.setCurrentIndex(2)
         sorter_page.model_edit.setText(classifier)
@@ -251,7 +256,7 @@ try:
         finish_jobs("AI sort")
         ok("AI copies", os.path.isdir(os.path.join(output, "red")) and os.path.isdir(os.path.join(output, "green")))
     else:
-        print("  ..  onnxruntime not installed - AI sorting skipped")
+        print("  ..  onnxruntime or onnx not installed - AI sorting skipped")
 
     for instance in pages:
         instance.toggle_theme()
