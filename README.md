@@ -309,3 +309,21 @@ Add one `ToolSpec` to `annotex/shell/registry.py` (name, section, icon, a
 and creates the tool on first use. A tool that processes files should subclass
 `annotex.ui.media_page.MediaToolPage` - it gets the header, menus, theme, job
 queue and the suite contract for free and only fills in `build()`.
+
+---
+
+## Credits
+
+Annotex is written by **Ashaz Qureshi**.
+
+**LabelImg Master** is built on [LabelImg](https://github.com/HumanSignal/labelImg)
+by Tzutalin. Its Pascal VOC, YOLO and CreateML readers and writers come from
+LabelImg's code (MIT licence), which is why those files come out byte for byte
+the same as LabelImg's. The full LabelImg copyright notice is in
+[`NOTICE`](NOTICE).
+
+## Licence
+
+Annotex is released under the **GNU General Public License v3.0** - see
+[`LICENSE`](LICENSE). The LabelImg-derived parts keep their MIT notice, as
+listed in [`NOTICE`](NOTICE).

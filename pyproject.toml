@@ -7,6 +7,8 @@ name = "annotex"
 version = "1.0.0"
 description = "Annotation, video and image tools behind one dashboard"
 readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+authors = [{name = "Ashaz Qureshi"}]
 requires-python = ">=3.9"
 dependencies = [
     "PySide6-Essentials>=6.5",
