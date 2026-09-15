@@ -45,7 +45,7 @@ Sorter.
 | `python bootstrap.py --upgrade` | refresh the environment |
 | `python bootstrap.py --offline wheels/` | install from a folder of wheels |
 | `python build/build_exe.py` | build a standalone executable for this platform (ffmpeg included) |
-| `python tests/run_all.py` | every test suite, headless |
+| `python tests/run_all.py` | every test suite, headless - including a batch built to break the labelling tools and a thousand random operations against each |
 
 ---
 
@@ -365,7 +365,9 @@ Annotex/
 │       ├── shapes/         LabelImg Shapes
 │       ├── video/          Video to Images, Trimmer, Converter, Merger
 │       └── images/         Image Converter, Image Sorter
-└── tests/                  roi/, labelimg/, shapes/, media/, shell/, run_all.py
+└── tests/                  roi/, labelimg/, shapes/, media/, shell/, ai/,
+                         robust/ (hostile folders, random operations),
+                         run_all.py
 ```
 
 ### Adding a tool
