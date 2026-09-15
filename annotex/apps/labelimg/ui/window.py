@@ -714,6 +714,11 @@ class LabelImgWindow(QMainWindow):
             if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier
                        | Qt.KeyboardModifier.MetaModifier) or self.canvas.is_drawing():
                 return False
+            # With a proposal on screen, Enter keeps that - accepting the whole
+            # frame and moving on would throw it away.
+            if self.canvas.tool == T_AI and self.canvas.ai_preview is not None:
+                self.accept_ai_preview()
+                return True
             self.accept_frame()
             return True
         index = self._hotkey_index(event)
@@ -1169,6 +1174,7 @@ class LabelImgWindow(QMainWindow):
         self.settings.push_recent(folder)
         self._rebuild_recent()
 
+        self._warn_about_stem_collisions()
         annotated = sum(1 for s in self.index_map.values() if s is not None)
         if not self.image_files:
             self._status("No supported images in this folder", "warning")
@@ -1183,6 +1189,28 @@ class LabelImgWindow(QMainWindow):
         self._offer_draft()
         self._sync_format_widgets()
         self._sync_actions()
+
+    def _warn_about_stem_collisions(self) -> None:
+        """One shared annotation folder plus two images called the same thing
+        in different sub-folders means the second would overwrite the first.
+        Say so now rather than after a day's work."""
+        if self.io is None or not self.save_dir:
+            return
+        clashes = self.io.stem_collisions(self.image_files)
+        if not clashes:
+            return
+        examples = []
+        for _stem, names in sorted(clashes.items())[:3]:
+            examples.append("  ·  ".join(names[:3]))
+        QMessageBox.warning(
+            self, "Two images would share one annotation file",
+            "%d image name(s) appear more than once in this batch's sub-folders, "
+            "and the annotations all go into one folder, so they would overwrite "
+            "each other:\n\n%s\n\nSave the annotations beside the images "
+            "(Ctrl+R, then choose the image folder) or rename the images."
+            % (len(clashes), "\n".join(examples)))
+        self._status("%d image name(s) repeat across sub-folders - annotations in "
+                     "one folder would overwrite each other" % len(clashes), "danger")
 
     def reload_folder(self) -> None:
         if not self.folder:
@@ -1237,6 +1265,7 @@ class LabelImgWindow(QMainWindow):
         self.io = AnnotationFolder(self.folder, self.save_dir)
         self.index_map = self.io.build_index(self.image_files)
         self.saved, self.saved_verified, self.force_write = {}, {}, set()
+        self._warn_about_stem_collisions()
         if "save_dir" in self._batch:
             self._batch["save_dir"] = os.path.relpath(self.save_dir, self.folder) \
                 if self.save_dir else ""
@@ -1529,9 +1558,14 @@ class LabelImgWindow(QMainWindow):
         if not indices:
             self._status("Select a box first", "warning")
             return
-        self.canvas.set_visible(indices, False)
-        self._status("%d box(es) hidden - they are still saved; select all (Ctrl+A) "
-                     "does not pick them" % len(indices), "info")
+        # Anything hidden in the selection comes back; otherwise hide it all.
+        show = any(not self.canvas.boxes[i].visible for i in indices)
+        self.canvas.set_visible(indices, show)
+        if show:
+            self._status("%d box(es) shown again" % len(indices), "good")
+        else:
+            self._status("%d box(es) hidden - they are still saved.  The eye in the "
+                         "box list brings them back" % len(indices), "info")
 
     def _boxes_for(self, rel):
         """The saved boxes of any image, reading it if this session has not."""
@@ -1590,6 +1624,18 @@ class LabelImgWindow(QMainWindow):
 
         try:
             clipboard.set_bridge(read_text, write_text)
+            board = QApplication.clipboard()
+            if board is not None:
+                # Something copied in another window shows up at once, and
+                # the cached answer never goes stale.
+                board.dataChanged.connect(self._on_clipboard_changed)
+        except Exception:
+            pass
+
+    def _on_clipboard_changed(self) -> None:
+        try:
+            clipboard.invalidate()
+            self._sync_actions()
         except Exception:
             pass
 

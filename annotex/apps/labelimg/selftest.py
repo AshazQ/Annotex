@@ -326,6 +326,16 @@ def run_selftest(verbose: bool = True) -> int:
         check("no .csv or log file is written for the batch",
               sorted(e for e in suffixes if e in (".csv", ".log", ".jsonl")), [])
 
+        # ── two images that would share one annotation file ───────
+        shared = AnnotationFolder(batch, os.path.join(tmp, "labels"))
+        check("no collision when every name is different",
+              shared.stem_collisions(["a/one.jpg", "b/two.jpg"]), {})
+        check("a repeated name across sub-folders is reported",
+              sorted(shared.stem_collisions(["a/one.jpg", "b/one.png"])), ["one"])
+        beside = AnnotationFolder(batch)
+        check("saving beside the images can never collide",
+              beside.stem_collisions(["a/one.jpg", "b/one.png"]), {})
+
         # ── the annotation clipboard ──────────────────────────────
         from annotex.core import clipboard
         clipboard.set_bridge(None, None)

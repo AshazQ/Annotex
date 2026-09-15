@@ -140,18 +140,55 @@ _payload = None
 _read_text = None
 _write_text = None
 
+# Reading the system clipboard is a round trip to whichever application owns
+# it, and the windows ask "is there anything to paste?" on every selection
+# change.  The answer is therefore cached for a moment, and thrown away the
+# instant the clipboard actually changes.
+_POLL_SECONDS = 0.3
+_cache = {"at": 0.0, "text": None, "payload": None}
+
 
 def set_bridge(read_text=None, write_text=None) -> None:
     """Mirror the clipboard to the system one.  Both callables may raise;
     nothing here lets that reach the caller."""
     global _read_text, _write_text
     _read_text, _write_text = read_text, write_text
+    invalidate()
+
+
+def invalidate() -> None:
+    """Forget what the system clipboard last held (call it on dataChanged)."""
+    _cache["at"] = 0.0
+    _cache["text"] = None
+    _cache["payload"] = None
+
+
+def _external():
+    if _read_text is None:
+        return None
+    now = time.monotonic()
+    if _cache["at"] and (now - _cache["at"]) < _POLL_SECONDS:
+        return _cache["payload"]
+    try:
+        text = _read_text()
+    except Exception:
+        text = None
+    _cache["at"] = now
+    if text == _cache["text"]:
+        return _cache["payload"]
+    _cache["text"] = text
+    try:
+        _cache["payload"] = Payload.from_json(text)
+    except Exception:
+        _cache["payload"] = None
+    return _cache["payload"]
 
 
 def copy(kind, items, size, source="") -> Payload:
     """Put items on the clipboard.  Returns the payload that was stored."""
     global _payload
     _payload = Payload(kind, list(items)[:MAX_ITEMS], size, source=source)
+    invalidate()
     if _write_text is not None:
         try:
             _write_text(_payload.to_json())
@@ -163,16 +200,12 @@ def copy(kind, items, size, source="") -> Payload:
 def clear() -> None:
     global _payload
     _payload = None
+    invalidate()
 
 
 def content():
     """What is on the clipboard now, ours or the system's, or None."""
-    external = None
-    if _read_text is not None:
-        try:
-            external = Payload.from_json(_read_text())
-        except Exception:
-            external = None
+    external = _external()
     if external is None:
         return _payload
     if _payload is None or external.stamp > _payload.stamp + 1e-6:

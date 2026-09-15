@@ -507,6 +507,24 @@ try:
     w2.close()
     w.canvas.set_boxes(w.saved.get(rel_with_draft, []))
     w.history.reset(w.canvas.snapshot())
+
+    # ── the film strip stays where it was put ─────────────────
+    strip = w.filmstrip
+    strip.resize(420, 110)
+    many = ["frame_%03d.png" % i for i in range(60)]
+    strip.set_batch(folder, many, {})
+    strip.set_index(45)
+    app.processEvents()
+    where, which = strip._offset, strip.index
+    ok("the strip scrolls to the current image", where > 0)
+    strip.set_batch(folder, many, {"frame_000.png": "labelled"})   # what a save does
+    ok("saving does not send the strip back to the first image",
+       (strip._offset, strip.index) == (where, which))
+    strip.set_batch(folder + "_elsewhere", many, {})
+    ok("a different folder does start again",
+       (strip._offset, strip.index) == (0.0, 0))
+    strip.set_batch(folder, w.image_files, w._statuses())
+    strip.set_index(w.index)
 finally:
     try:
         w.tool_close()

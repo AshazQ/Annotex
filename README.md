@@ -8,8 +8,8 @@ background job queue and the same safe-saving rules.
 | Section | Tool | What it is for |
 |---|---|---|
 | Annotation | **ROI Studio** | Polygon ROI annotation for fixed-camera batches; xlsx + JSON outputs; COCO / YOLO-seg / VOC / mask export. |
-| Annotation | **LabelImg Master** | Bounding-box labelling and review; class projects with permanent IDs; Pascal VOC, YOLO, CreateML written byte for byte as LabelImg always has. |
-| Annotation | **LabelImg Shapes** | Polygons, oriented boxes, circles, ellipses and freehand outlines; editable shape files; YOLO segmentation, YOLO OBB and COCO export. |
+| Annotation | **LabelImg Master** | Bounding-box labelling and review; AI select with SAM; class projects with permanent IDs; Pascal VOC, YOLO, CreateML written byte for byte as LabelImg always has. |
+| Annotation | **LabelImg Shapes** | Polygons, oriented boxes, circles, ellipses and freehand outlines; AI select with SAM; editable shape files; YOLO segmentation, YOLO OBB and COCO export. |
 | Video | **Video to Images** | Frames every N seconds, N per second, every Nth frame, on scene change - or scrub and grab. |
 | Video | **Video Trimmer** | Mark pieces with I / O; fast lossless or frame-accurate cuts; separate files or joined. |
 | Video | **Video Converter** | MP4 H.264 / H.265, WebM VP9, MKV, AVI; resolution, frame rate, quality or target size. |
@@ -31,8 +31,9 @@ python bootstrap.py --shortcut --run
 
 That creates a private environment in `.venv`, installs everything, runs the
 self-tests, writes a desktop shortcut and starts Annotex. No administrator
-rights, nothing installed system-wide. Add `--ai` to install onnxruntime for
-AI sorting.
+rights, nothing installed system-wide. Add `--ai` to install onnxruntime and
+numpy, for AI select in the labelling tools and AI sorting in the Image
+Sorter.
 
 | Command | What it does |
 |---|---|
@@ -172,6 +173,7 @@ them.
 | Key | |
 |---|---|
 | **W** | draw a box (hold **Ctrl** for a square) |
+| **S** | AI select - click the object and the box is proposed |
 | **V** / **H** | select tool / pan tool |
 | **1 … 9, 0** | pick the 1st – 10th class; with a box selected, relabel it |
 | **Shift+1 … 0** | the 11th – 20th class |
@@ -180,13 +182,14 @@ them.
 | **Space** | toggle verified |
 | **D** / **A** | next / previous image (**Shift+D**: next unannotated) |
 | **Ctrl+S** | save (and move on, when auto-advance is on) |
-| **Ctrl+V** / **Ctrl+Shift+V** | replace with / add the previous frame's boxes |
+| **Ctrl+C** / **Ctrl+X** / **Ctrl+V** | copy / cut / paste the selected boxes - onto any other image |
+| **Ctrl+Shift+V** / **Ctrl+Alt+V** | replace with / add the previous frame's boxes |
 | **Ctrl+Z** / **Ctrl+Y** | undo / redo |
 | Arrows, Shift+Arrows | nudge the selection 1 / 10 px |
 | **Ctrl+E** | change the class of the selection |
 | **/** | search classes |
 | **Ctrl+M** | Class Manager |
-| **F6 / F7 / F8 / F9** | review mode / dashboard / HTML report / change history |
+| **F6 / F7 / F8** | review mode / dashboard / HTML report |
 | **Ctrl+K** / **?** | command palette / every shortcut |
 
 With the select tool: drag a box to move it, drag any of its eight handles to
@@ -194,6 +197,16 @@ resize, Shift+click to add to the selection, drag on empty space to
 rubber-band select, double-click a box to change its class, right-click for its
 menu. Overlapping boxes pick the smallest one under the cursor. Snapping pulls
 edges onto the image border and onto other boxes.
+
+**Copying boxes onto another image.** Select the boxes you want (Shift+click
+adds to the selection, or rubber-band them), **Ctrl+C**, move to any other
+image, **Ctrl+V**. Nothing selected means the whole image. **Ctrl+X** cuts.
+The clipboard survives moving between images, switching to LabelImg Shapes -
+where the boxes arrive as oriented boxes - and closing the tool, because the
+copy also goes onto the system clipboard as JSON. Pasting onto an image of a
+different size scales the boxes to it instead of dropping them in the corner.
+To take a whole frame's annotation across instead, **Ctrl+Shift+V** replaces
+this image's boxes with the previous image's and **Ctrl+Alt+V** adds them.
 
 ### Classes
 
@@ -215,8 +228,9 @@ The writers are LabelImg's own and produce the same bytes they always did -
 `python run.py --selftest` checks this against the original modules whenever
 the `labelImg-master` folder is next to Annotex. Every write is verified before
 it replaces the old file, the previous version is kept in `.labelimg_backup/`,
-external changes are detected, unsaved work is drafted, a lock file prevents
-two sessions colliding, and every decision is logged in `.labelimg_audit.jsonl`.
+external changes are detected, unsaved work is drafted, and a lock file
+prevents two sessions colliding. Nothing else is written beside your images:
+no log of what was annotated when, and no count-and-time record of the work.
 
 Also: apply boxes to many images, mark many as background, import and merge
 another annotator's folder, COCO export, review mode, dashboard and HTML
@@ -236,11 +250,14 @@ untouched, and the two keep separate class lists.
 | **C** | circle - drag out from the centre |
 | **E** | ellipse - drag its box (Shift for a circle), then turn it |
 | **F** | freehand - hold the button and trace the outline |
+| **S** | AI select - click the object and the outline is proposed |
 | **V** / **H** (or hold Space) | select / pan |
 | **1 … 9, 0** | pick a class; with a shape selected, relabel it |
 | **[** / **]** | rotate the selection 15° (Shift while dragging snaps to 15°) |
 | **D** / **A** | next / previous image - leaving an image saves it |
 | **Ctrl+S** | save (an image saved with no shapes counts as background) |
+| **Ctrl+C** / **Ctrl+X** / **Ctrl+V** | copy / cut / paste the selected shapes - onto any other image |
+| **Ctrl+Shift+V** | add every shape from the previous image |
 | **Ctrl+Z** / **Ctrl+Y** | undo / redo |
 | **Ctrl+E** / **Ctrl+D** / **Del** | change class / duplicate / delete |
 | **Ctrl+M** / **Ctrl+Shift+E** | Class Manager / export |
@@ -268,6 +285,54 @@ YOLO class numbers are the Class Manager's permanent IDs, counted from 0.
 
 ---
 
+## AI select (SAM)
+
+Both labelling tools have a **Segment Anything** tool, the way LabelMe does
+it: press **S**, click the object, and the tool proposes the shape - a box in
+LabelImg Master, a polygon in LabelImg Shapes.
+
+| | |
+|---|---|
+| click | include this - the model looks for the object under the cursor |
+| right-click, or Shift+click | exclude this - trim the proposal back |
+| drag | a rough box to look inside |
+| **Enter** (or double-click) | keep the proposal, with the active class |
+| **Backspace** | take back the last click |
+| **Esc** | drop the proposal and start again |
+
+Nothing is added to the image until you accept it, and what is added is an
+ordinary box or polygon: drag it, resize it, relabel it, undo it like any
+other.
+
+**Setting it up.** The model is two ONNX files - an *encoder* and a *decoder* -
+that live on your machine; no image ever leaves it and nothing is downloaded
+on its own. Once:
+
+```
+python bootstrap.py --ai          # installs onnxruntime and numpy
+```
+
+then put the two files in the model folder and pick them in
+**Settings → AI** (or **Window → AI model**). The folder is shown in that
+dialog - `%APPDATA%\Annotex\models` on Windows,
+`~/Library/Application Support/Annotex/models` on macOS,
+`~/.config/annotex/models` on Linux - and a `models/` folder beside Annotex
+itself is searched too, for a shared or portable copy. Files whose names
+contain *encoder* and *decoder* are paired up automatically; anything else can
+be pointed at by hand. The dialog opens the model before accepting it, so a
+file that cannot be used is refused there rather than on your first click.
+
+Exports from Segment Anything, MobileSAM, EdgeSAM and samexporter all work:
+the graph is inspected rather than assumed. MobileSAM (about 40 MB) is the
+quickest on a laptop; a ViT-B export is more accurate and slower. The slow
+half of the model runs once per image, in the background, so only the first
+click on a new image waits; every click after that is immediate.
+
+Without onnxruntime and numpy the tool simply says what to install, and
+everything else in Annotex works exactly as before.
+
+---
+
 ## ROI Studio
 
 Unchanged in behaviour and outputs, and it still reads its own settings file.
@@ -287,8 +352,9 @@ Annotex/
 ├── annotex/
 │   ├── app.py              entry point, environment checks, crash handling
 │   ├── config.py           paths and the shell's settings
-│   ├── core/               no Qt: safe I/O, undo, drafts, audit log, HTML
-│   │                       report kit, background job model, media/ffmpeg
+│   ├── core/               no Qt: safe I/O, undo, drafts, the annotation
+│   │                       clipboard, SAM + mask maths, HTML report kit,
+│   │                       background job model, media/ffmpeg
 │   ├── ui/                 shared Qt kit: theme, icons, viewport, film strip,
 │   │                       panels, dialogs, job queue, media widgets, media page
 │   ├── shell/              Home dashboard, the window, the tool registry

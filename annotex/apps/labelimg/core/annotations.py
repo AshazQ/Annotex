@@ -221,6 +221,21 @@ class AnnotationFolder:
     def target_path(self, rel, fmt) -> str:
         return os.path.join(self.target_dir(rel), self.stem(rel) + FORMAT_EXT[fmt])
 
+    def stem_collisions(self, rels):
+        """Images that would write to the same annotation file.
+
+        An annotation is named after the image's stem, so two images with the
+        same name in different sub-folders are only safe while their
+        annotations sit beside them.  Pointed at one shared folder, the second
+        would silently overwrite the first - so the caller is told before a
+        single box is drawn."""
+        if not self.save_dir:
+            return {}
+        seen = {}
+        for rel in rels:
+            seen.setdefault(self.stem(rel).lower(), []).append(rel)
+        return {stem: names for stem, names in seen.items() if len(names) > 1}
+
     def search_dirs(self, rel):
         dirs = []
         if self.save_dir:

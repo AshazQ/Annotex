@@ -947,6 +947,18 @@ class ShapesWindow(QMainWindow):
 
         try:
             clipboard.set_bridge(read_text, write_text)
+            board = QApplication.clipboard()
+            if board is not None:
+                # Something copied in another window shows up at once, and
+                # the cached answer never goes stale.
+                board.dataChanged.connect(self._on_clipboard_changed)
+        except Exception:
+            pass
+
+    def _on_clipboard_changed(self) -> None:
+        try:
+            clipboard.invalidate()
+            self._sync_actions()
         except Exception:
             pass
 

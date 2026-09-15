@@ -77,10 +77,18 @@ annotex --tool labelimg
 
 Beside each batch of images LabelImg Master writes its annotations plus a few
 hidden housekeeping files: `.labelimg.lock`, `.labelimg_draft.json`,
-`.labelimg_audit.jsonl`, `.labelimg_verified.json` (YOLO only),
-`.labelimg_backup/` and, if saved, `.labelimg.json` batch settings. ROI Studio
-keeps its own `.roi_studio*` files. None of them are needed by downstream
-tools and all are safe to exclude when copying annotations onward.
+`.labelimg_verified.json` (YOLO only), `.labelimg_backup/` and, if saved,
+`.labelimg.json` batch settings. No activity log is written: nothing records
+what was annotated, when, or how long it took. ROI Studio keeps its own
+`.roi_studio*` files. None of them are needed by downstream tools and all are
+safe to exclude when copying annotations onward.
+
+An older batch may still hold a `.labelimg_audit.jsonl` from a previous
+version. It is no longer written or read, and deleting it changes nothing.
+
+Optional SAM models for AI select are not part of a batch; they live with the
+per-user settings, in `…/annotex/models/` (or a `models/` folder beside
+Annotex, for a shared copy).
 
 ## Sharing a class project with a team
 

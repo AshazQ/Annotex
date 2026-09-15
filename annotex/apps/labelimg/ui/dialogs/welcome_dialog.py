@@ -23,6 +23,15 @@ PAGES = [
      "<b>W</b> draws a box, <b>V</b> selects. Drag handles to resize, arrows to "
      "nudge, <b>Enter</b> accepts the frame and moves on, <b>N</b> marks it as "
      "background, <b>Space</b> toggles verified."),
+    ("magic", "Let the model find it",
+     "<b>S</b> is AI select: click the object and the box is proposed - "
+     "right-click to exclude part of it, <b>Enter</b> keeps it. It needs a "
+     "Segment Anything model, chosen once in <b>Settings → AI</b>; without one "
+     "the tool simply stays off."),
+    ("copy", "Copy boxes onto another image",
+     "Select the boxes you want and <b>Ctrl+C</b>, then <b>Ctrl+V</b> on any "
+     "other image - <b>Ctrl+Shift+V</b> takes the whole previous frame across. "
+     "The copy survives moving between images and tools."),
     ("save", "Nothing is lost on the way",
      "Leaving an image saves it. Every write is verified before it replaces the "
      "old file, the previous version is kept in <b>%s</b>, and unsaved work is "

@@ -104,13 +104,25 @@ class FilmStrip(QWidget):
         self.update()
 
     def set_batch(self, folder, names, statuses=None) -> None:
-        self.folder = str(folder or "")
+        """Show this batch.
+
+        Called again for the same folder after every save, so it keeps the
+        thumbnails it already decoded and the place the strip was scrolled
+        to - re-reading them all and jumping back to the first image on every
+        save is both slow and disorienting."""
+        folder = str(folder or "")
+        moved = folder != self.folder
+        self.folder = folder
         self.names = list(names or [])
         self.statuses = dict(statuses or {})
-        self._thumbs.clear()
-        self._requested.clear()
-        self._offset = 0.0
-        self.index = 0
+        if moved:
+            self._thumbs.clear()
+            self._requested.clear()
+            self._offset = 0.0
+            self.index = 0
+        else:
+            self._offset = min(self._offset, self._max_offset())
+            self.index = max(0, min(self.index, len(self.names) - 1))
         self.update()
 
     def set_statuses(self, statuses) -> None:
@@ -118,9 +130,12 @@ class FilmStrip(QWidget):
         self.update()
 
     def set_index(self, index: int) -> None:
+        index = max(0, int(index))
         if index == self.index:
+            self._ensure_visible()       # the strip may have been re-laid out
+            self.update()
             return
-        self.index = int(index)
+        self.index = index
         self._ensure_visible()
         self.update()
 
