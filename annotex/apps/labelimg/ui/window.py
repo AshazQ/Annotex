@@ -126,6 +126,7 @@ class LabelImgWindow(QMainWindow):
         self.draft = DraftStore(DRAFT_NAME, serializer=_box_state)
         self.history = History(MAX_UNDO_STEPS)
         self.assistant = None            # the AI helper, built on first use
+        self._ai_offered = False         # the model chooser is offered once
 
         self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
         self.setMinimumSize(1120, 700)
@@ -1757,10 +1758,20 @@ class LabelImgWindow(QMainWindow):
         assistant = self.ai()
         ok, why = assistant.usable()
         if not ok:
-            self._status(str(why).replace("\n", "  "), "warning")
-            QMessageBox.information(self, "AI select", why)
-            self.open_ai_model()
-            ok, _why = assistant.usable()
+            self._status(str(why).replace("\n", "  ")
+                         + "   ·   Settings → AI chooses one", "warning")
+            # Offer the chooser once; after that the status line is enough,
+            # so pressing the key again is not a dialog every time.
+            if not self._ai_offered:
+                self._ai_offered = True
+                answer = QMessageBox.question(
+                    self, "AI select",
+                    "%s\n\nChoose a model now?" % why,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes)
+                if answer == QMessageBox.StandardButton.Yes:
+                    self.open_ai_model()
+                    ok, _why = assistant.usable()
             if not ok:
                 return False
         rel = self.current_name()
@@ -1833,6 +1844,7 @@ class LabelImgWindow(QMainWindow):
         dialog = AiModelDialog(self, self.ai(), self.theme)
         dialog.exec()
         if dialog.changed:
+            self._ai_offered = False
             self.canvas.set_ai_preview(None)
             if self.canvas.tool == T_AI and not self.enter_ai_tool():
                 self.set_tool(T_SELECT)

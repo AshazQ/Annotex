@@ -228,7 +228,7 @@ def make_shortcut(python: str) -> bool:
             entry = os.path.join(applications, "annotex.desktop")
             with open(entry, "w", encoding="utf-8") as fh:
                 fh.write("[Desktop Entry]\nType=Application\nName=%s\n"
-                         "Comment=ROI Studio and LabelImg Master\n"
+                         "Comment=Annotation, video and image tools\n"
                          "Exec=\"%s\" \"%s\"\nPath=%s\nTerminal=false\n"
                          "Categories=Graphics;Science;\n" % (APP_NAME, python, target, HERE))
             os.chmod(entry, 0o755)

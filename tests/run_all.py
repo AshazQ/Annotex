@@ -16,6 +16,7 @@ SUITES = [("roi core", "roi/test_core.py"),
           ("labelimg gui", "labelimg/test_gui.py"),
           ("shapes gui", "shapes/test_gui.py"),
           ("ai", "ai/test_ai.py"),
+          ("hostile input", "robust/test_hostile.py"),
           ("media gui", "media/test_gui.py"),
           ("shell", "shell/test_shell.py")]
 

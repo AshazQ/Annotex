@@ -40,6 +40,14 @@ def ensure_pyinstaller(python):
             return False
 
 
+def _installed(module) -> bool:
+    try:
+        __import__(module)
+        return True
+    except Exception:
+        return False
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Build the executable.")
     parser.add_argument("--onedir", action="store_true",
@@ -48,6 +56,10 @@ def main(argv=None):
                         help="delete previous build output first")
     parser.add_argument("--console", action="store_true",
                         help="keep a console window (useful for debugging)")
+    parser.add_argument("--no-ai", action="store_true",
+                        help="leave onnxruntime and numpy out, even when they are "
+                             "installed (a much smaller executable, no AI select "
+                             "and no AI sorting)")
     args = parser.parse_args(argv)
 
     python = sys.executable
@@ -66,13 +78,28 @@ def main(argv=None):
                    os.path.join(ROOT, "annotex", "resources"), separator)]
     if not args.console:
         command.append("--windowed")
-    for module in ("PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick",
-                   "PySide6.Qt3DCore", "PySide6.QtMultimedia",
-                   "PySide6.QtWebEngineCore", "tkinter", "matplotlib", "numpy",
-                   "scipy", "pytest"):
+
+    # The AI features (SAM select in the labelling tools, AI sorting in the
+    # Image Sorter) need numpy and onnxruntime.  Excluding numpy outright - as
+    # this script used to - quietly produced a build where those features were
+    # installed but could never work, so they are only excluded when they are
+    # genuinely not here, or when --no-ai asks for the small build.
+    with_ai = not args.no_ai and _installed("numpy") and _installed("onnxruntime")
+    excluded = ["PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick",
+                "PySide6.Qt3DCore", "PySide6.QtMultimedia",
+                "PySide6.QtWebEngineCore", "tkinter", "matplotlib", "scipy",
+                "pytest"]
+    if not with_ai:
+        excluded += ["numpy", "onnxruntime"]
+    for module in excluded:
         command += ["--exclude-module", module]
     for module in ("PySide6.QtSvg", "lxml.etree", "lxml._elementpath"):
         command += ["--hidden-import", module]
+    if with_ai:
+        command += ["--collect-binaries", "onnxruntime",
+                    "--collect-data", "onnxruntime",
+                    "--hidden-import", "onnxruntime"]
+    print("AI features: %s" % ("included" if with_ai else "left out"))
     # the bundled ffmpeg binary travels with the executable
     command += ["--collect-binaries", "imageio_ffmpeg", "--collect-data", "imageio_ffmpeg"]
     command.append(os.path.join(ROOT, "run.py"))

@@ -70,12 +70,25 @@ def environment_report() -> str:
         except Exception:
             lines.append("%-10s MISSING" % module)
     for module, purpose in (("imageio_ffmpeg", "the bundled ffmpeg"),
-                            ("onnxruntime", "optional AI sorting")):
+                            ("numpy", "optional AI select and AI sorting"),
+                            ("onnxruntime", "optional AI select and AI sorting")):
         try:
             imported = __import__(module)
             lines.append("%-10s %s" % (module[:10], getattr(imported, "__version__", "installed")))
         except Exception:
             lines.append("%-10s not installed (%s)" % (module[:10], purpose))
+    try:
+        from .core.ai.sam import discover_models, missing_packages, models_dir
+        if missing_packages():
+            lines.append("AI select  off - %s missing (python bootstrap.py --ai)"
+                         % " and ".join(missing_packages()))
+        else:
+            found = discover_models()
+            lines.append("AI select  %s"
+                         % ("%d model(s) in %s" % (len(found), models_dir()) if found
+                            else "ready, but no SAM model in %s" % models_dir()))
+    except Exception as exc:
+        lines.append("AI select  unavailable (%s)" % exc)
     try:
         from .core.media.ffmpeg import ffmpeg_version, find_ffmpeg
         exe = find_ffmpeg()
