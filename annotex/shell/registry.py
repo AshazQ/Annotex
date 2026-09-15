@@ -32,7 +32,8 @@ import importlib
 import os
 from dataclasses import dataclass, field
 
-SECTIONS = (("annotation", "Annotation"), ("video", "Video"), ("images", "Images"))
+SECTIONS = (("annotation", "Annotation"), ("video", "Video"), ("images", "Images"),
+            ("dataset", "Dataset"))
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,12 @@ def _tools():
                  "annotation status) or with an ONNX model - every run can be undone.",
                  "images", "sort", media, ("Keys 1-9", "Rules", "ONNX models"),
                  _page("annotex.apps.images.ui.sorter_page", "SorterPage")),
+        ToolSpec("dataset", "Dataset Tools", "Clean up, rename, split and zip",
+                 "Six independent tools for image + .txt label folders: delete empty labels, "
+                 "move unpaired images, rename pairs, split into parts, rename parts and zip - "
+                 "each previewed first, and every run can be undone.",
+                 "dataset", "dataset", media, ("Preview first", "Undo any run"),
+                 _page("annotex.apps.dataset.ui.page", "DatasetPage")),
     ]
 
 

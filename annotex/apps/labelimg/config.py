@@ -85,6 +85,14 @@ DEFAULT_SETTINGS = {
     "sam_encoder": "",
     "sam_decoder": "",
     "ai_keep_prompt": False,         # keep the clicks after accepting a box
+    # Workspace: what is folded away for a bigger image.
+    "side_collapsed": False,
+    "filmstrip_folded": False,
+    # Auto-labelling with your own YOLO detector.
+    "yolo_model": "",
+    "yolo_names": "",                # optional class names file
+    "yolo_confidence": 50,           # percent
+    "yolo_class_map": {},            # model key -> {model class: project class, "" = ignore}
 }
 
 # Settings a batch folder may carry for everyone who opens it.

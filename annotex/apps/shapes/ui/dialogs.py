@@ -132,6 +132,15 @@ class ShapesSettingsDialog(Dialog):
         self.body.addWidget(frame)
         self._refresh_model_label()
 
+        from annotex.ui.dialogs.keys import KeyBindingsEditor
+        from . import shortcuts as shape_keys
+        frame, inner = card("Keyboard shortcuts")
+        self.keys = KeyBindingsEditor(shape_keys.ACTIONS, settings.get("shortcuts", {}) or {},
+                                      reserved=shape_keys.RESERVED)
+        self.keys.setMinimumHeight(320)
+        inner.addWidget(self.keys)
+        self.body.addWidget(frame)
+
         self.add_button("Cancel", slot=self.reject)
         self.add_button("Save", primary=True, slot=self.accept)
 
@@ -169,4 +178,5 @@ class ShapesSettingsDialog(Dialog):
                 "skip_label_dialog": self.skip_dialog.isChecked(),
                 "sticky_class": self.sticky.isChecked(),
                 "ai_keep_prompt": self.ai_keep.isChecked(),
-                "ai_smoothing": self.smoothing.value() / 10.0}
+                "ai_smoothing": self.smoothing.value() / 10.0,
+                "shortcuts": self.keys.overrides()}

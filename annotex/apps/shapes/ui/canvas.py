@@ -78,6 +78,7 @@ class ShapeCanvas(ImageViewport):
     editLabelRequested = Signal()
     aiPromptChanged = Signal()           # the AI prompt was added to
     aiAccepted = Signal()                # Enter / double-click on a proposal
+    proposalsAccepted = Signal()         # Enter with auto-label proposals on screen
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -105,6 +106,7 @@ class ShapeCanvas(ImageViewport):
         self.ai_points = []              # [(x, y, positive)] in image px
         self.ai_box = None               # (x0, y0, x1, y1) in image px
         self.ai_preview = None           # proposed [(x, y)] outline
+        self.proposals = []              # auto-label: [{label, score, box, keep}]
         self.ai_busy = False
         self._ai_anchor = None
         self._ai_negative = False
@@ -151,6 +153,7 @@ class ShapeCanvas(ImageViewport):
     def load_image(self, pixmap: QPixmap | None, shapes=None) -> None:
         self.shapes = [s.copy() for s in (shapes or [])]
         self.selection.clear()
+        self.proposals = []
         self.clear_ai(quiet=True)
         self._cancel_interaction()
         self.set_pixmap(pixmap)
@@ -331,10 +334,18 @@ class ShapeCanvas(ImageViewport):
         self._drag_moved = False
 
         if button == Qt.MouseButton.MiddleButton or self._effective_tool() == T_PAN:
+            if self._space_pan:
+                self._space_dragged = True
             self._drag = D_PAN
             self._drag_origin = pos
             self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
             return
+        if self.proposals and button == Qt.MouseButton.LeftButton:
+            hit = self._proposal_at(pos)
+            if hit >= 0:                       # a click drops a proposal, or brings it back
+                self.proposals[hit]["keep"] = not self.proposals[hit]["keep"]
+                self.update()
+                return
         if button == Qt.MouseButton.RightButton:
             if self.tool == T_AI:
                 self._add_ai_point(self.to_image(pos), positive=False)
@@ -992,6 +1003,7 @@ class ShapeCanvas(ImageViewport):
         key = event.key()
         if key == Qt.Key.Key_Space and not event.isAutoRepeat() and not self._draft:
             self._space_pan = True
+            self._space_dragged = False
             self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
             return
         if self.handle_pending_key(event):
@@ -1009,6 +1021,13 @@ class ShapeCanvas(ImageViewport):
         filmstrip has taken the focus, so none of it may depend on focus."""
         key = event.key()
         mods = event.modifiers()
+        if self.proposals and key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.proposalsAccepted.emit()
+            return True
+        if self.proposals and key == Qt.Key.Key_Escape:
+            self.clear_proposals()
+            self.statusMessage.emit("Proposals dropped", "info")
+            return True
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self.tool == T_AI and self.ai_preview:
                 self.aiAccepted.emit()
@@ -1044,6 +1063,11 @@ class ShapeCanvas(ImageViewport):
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat() and self._space_pan:
             self._space_pan = False
             self.setCursor(QCursor(TOOL_CURSORS[self.tool]))
+            # A tap (no drag while it was held) is a command - Verified, by default.
+            if not getattr(self, "_space_dragged", False):
+                handler = getattr(self, "space_tap_handler", None)
+                if handler is not None:
+                    handler()
             return
         super().keyReleaseEvent(event)
 
@@ -1211,7 +1235,55 @@ class ShapeCanvas(ImageViewport):
             painter.setBrush(QBrush(qcolor(self._colours["snap"] if i == 0 else self._colours["drawing"])))
             painter.drawEllipse(point, 5.0 if i == 0 else 3.5, 5.0 if i == 0 else 3.5)
 
+    # ── auto-label proposals ──────────────────────────────
+    def set_proposals(self, items) -> None:
+        """[{label, score, box: (x0, y0, x1, y1), keep}] from the YOLO model."""
+        self.proposals = [dict(item, keep=item.get("keep", True)) for item in (items or [])]
+        self.update()
+
+    def clear_proposals(self) -> None:
+        self.proposals = []
+        self.update()
+
+    def kept_proposals(self):
+        return [item for item in self.proposals if item["keep"]]
+
+    def _proposal_rect(self, item) -> QRectF:
+        x0, y0, x1, y1 = item["box"]
+        return QRectF(self.to_widget(x0, y0), self.to_widget(x1, y1)).normalized()
+
+    def _proposal_at(self, pos) -> int:
+        hits = [(self._proposal_rect(item).width() * self._proposal_rect(item).height(), index)
+                for index, item in enumerate(self.proposals) if self._proposal_rect(item).contains(pos)]
+        return min(hits)[1] if hits else -1
+
+    def _paint_proposals(self, painter) -> None:
+        if not self.proposals:
+            return
+        for item in self.proposals:
+            rect = self._proposal_rect(item)
+            colour = qcolor(self._colours["drawing"])
+            if not item["keep"]:
+                colour.setAlpha(110)
+            pen = QPen(colour, self.line_width + (1 if item["keep"] else 0), Qt.PenStyle.DashLine)
+            pen.setCosmetic(True)
+            fill = QColor(colour)
+            fill.setAlpha(50 if item["keep"] else 0)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(fill))
+            painter.drawRect(rect)
+            if not item["keep"]:
+                painter.drawLine(rect.topLeft(), rect.bottomRight())
+            painter.setPen(QPen(qcolor(self._colours["label"])))
+            painter.drawText(rect.topLeft() + QPointF(3, -5), "%s  %.2f" % (item["label"], item["score"]))
+        painter.setPen(QPen(qcolor(self._colours["label"])))
+        painter.drawText(self.rect().adjusted(12, 10, -12, 0),
+                         Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
+                         "%d of %d kept  ·  click a box to drop it  ·  Enter keeps  ·  Esc drops all"
+                         % (len(self.kept_proposals()), len(self.proposals)))
+
     def _paint_ai(self, painter) -> None:
+        self._paint_proposals(painter)
         if self.tool != T_AI and not self.has_ai_prompt():
             return
         if self.ai_box is not None:

@@ -77,6 +77,15 @@ DEFAULT_SETTINGS = {
     "sam_decoder": "",
     "ai_keep_prompt": False,         # keep the clicks after accepting a shape
     "ai_smoothing": 1.2,             # px; higher means fewer polygon points
+    # Workspace: what is folded away for a bigger image.
+    "side_collapsed": False,
+    "filmstrip_folded": False,
+    "shortcuts": {},                 # action id -> key, over the defaults in ui/shortcuts.py
+    # Auto-labelling with your own YOLO detector.
+    "yolo_model": "",
+    "yolo_names": "",                # optional class names file
+    "yolo_confidence": 50,           # percent
+    "yolo_class_map": {},            # model key -> {model class: project class, "" = ignore}
 }
 
 

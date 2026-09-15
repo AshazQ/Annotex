@@ -51,9 +51,24 @@ Sorter.
 
 ## The shell
 
-A slim bar across the top holds **Home**, a tab for each tool you have opened
-and the jobs indicator. Tools stay exactly where you left them while you move
-between them.
+A slim bar across the top holds **Home**, a tab for each tool you have opened,
+the jobs indicator and **Display**. Tools stay exactly where you left them
+while you move between them.
+
+**The image comes first.** In ROI Studio, LabelImg Master and LabelImg Shapes
+the tools sit in a pill-shaped rail down the left, so the image starts at the
+top of the window. The side panel folds into a slim strip (its button, or
+**Ctrl+Shift+L**) that keeps Save, Next and Previous within reach, and the
+filmstrip folds away under the one-line bar that shows the folder and image.
+Each tool remembers what you folded. Nothing is taken away - every button is
+still one click away.
+
+**Display** sets the **Interface size** for the whole of Annotex: Automatic
+(the largest size that fits the screen without scrolling), or 75 % to 150 %.
+Smaller fits more on a laptop running Windows at 125 % or 150 % scaling. The
+size is used from the next start; *Save and restart now* does that straight
+away, saving open work first. Every dialog scrolls when the screen is too
+short for it, so no button is ever out of reach.
 
 **Home** greets you, offers to **continue where you left off** (the last
 folders you worked in, with a thumbnail, how many images are annotated and a
@@ -164,11 +179,48 @@ default). Sorting **always copies**, and every copy is logged in
 
 ---
 
+## Dataset Tools
+
+Six independent tools for folders of images with YOLO-style `.txt` labels
+beside them (`a.jpg` + `a.txt`). Use any of them, in any order - none needs
+another to have run first.
+
+| Tool | What it does |
+|---|---|
+| Delete empty .txt files | removes label files with nothing but spaces or blank lines in them (sub-folders optional); images are never touched |
+| Move unpaired images | moves images with no `.txt` of the same name into `unpaired images/` |
+| Rename image + label pairs | renames every pair to `name_001.jpg` + `name_001.txt`, … in natural order |
+| Split into parts | moves pairs into `part_1`, `part_2`, … with the counts you give (`500, 500, rest`) |
+| Rename part folders | renames `part_1`, `part_2`, … to `name_1`, `name_2`, …, keeping the numbers |
+| Zip each folder | compresses each sub-folder into `zipped/<folder>.zip`, leaving the folders as they are |
+| Check & fix labels | finds lines that break training - class ids that are not whole numbers or not in `classes.txt` / `data.yaml`, the wrong number of values, coordinates outside the image, boxes with no size (or under a minimum), repeated boxes - and fixes what you tick; the rest is reported |
+| Train / val / test split | copies (or moves) pairs into `images/train`, `labels/train`, … by your percentages, repeatable with a seed, keeping rare classes in every set, and writes `data.yaml` |
+| Class tools | counts the boxes of each class, and renumbers, merges or deletes classes across every label (`3>1, 4>1, 7>delete`) |
+
+**Nothing happens without a preview.** Choose a folder and a tool, and the
+table lists every file that would be removed, moved, renamed or zipped - and
+anything that stops it, in plain words - before **Run** is enabled.
+
+**Every run can be undone**, even after closing Annotex: History lists the runs
+for the folder, and *Undo selected run* puts things back as they were. A
+"deleted" file is only moved into a hidden `.annotex_removed` folder inside the
+dataset until then.
+
+Built for folders on Windows as much as Linux and macOS: names are checked
+against Windows' rules (no `CON`, `?`, trailing dots, …), images and labels are
+matched without regard to case, a pair's image and label always move and rename
+together, renames go through temporary names so an interruption never leaves
+two files wanting one name, a file that is locked or refused is reported and
+skipped, and an existing file is never overwritten. The work runs in the
+background and can be cancelled.
+
+---
+
 ## LabelImg Master
 
 ### Working through a folder
 
-**Ctrl+U** opens a folder; every image in it, sub-folders included, becomes a
+**Ctrl+O** opens a folder; every image in it, sub-folders included, becomes a
 frame. Annotations are saved beside the images, or wherever **Ctrl+R** points
 them.
 
@@ -176,23 +228,32 @@ them.
 |---|---|
 | **W** | draw a box (hold **Ctrl** for a square) |
 | **S** | AI select - click the object and the box is proposed |
+| **Y** | auto-label with your own YOLO model - every object is proposed at once |
 | **V** / **H** | select tool / pan tool |
 | **1 … 9, 0** | pick the 1st – 10th class; with a box selected, relabel it |
 | **Shift+1 … 0** | the 11th – 20th class |
 | **Enter** | accept this frame as it is and go to the next |
 | **N** | background: save an empty annotation and go on |
 | **Space** | toggle verified |
-| **D** / **A** | next / previous image (**Shift+D**: next unannotated) |
+| **D** / **A** (or PgDown / PgUp, or the round arrows on the image) | next / previous image (**Shift+D**: next unannotated) |
 | **Ctrl+S** | save (and move on, when auto-advance is on) |
+| **Ctrl+Shift+D** | move the image (and its annotation) into `deleted_images` |
 | **Ctrl+C** / **Ctrl+X** / **Ctrl+V** | copy / cut / paste the selected boxes - onto any other image |
 | **Ctrl+Shift+V** / **Ctrl+Alt+V** | replace with / add the previous frame's boxes |
 | **Ctrl+Z** / **Ctrl+Y** | undo / redo |
 | Arrows, Shift+Arrows | nudge the selection 1 / 10 px |
-| **Ctrl+E** | change the class of the selection |
-| **/** | search classes |
-| **Ctrl+M** | Class Manager |
+| **Ctrl+E** / **Del** / **Ctrl+Shift+Del** | change class / delete / clear every box |
+| **Ctrl+0** / **Ctrl+1** / **Z** | fit / 100 % / zoom to the selection |
+| **L** | show or hide class names |
+| **/** | search classes (**Ctrl+[** / **Ctrl+]** previous / next class) |
+| **Ctrl+M** / **Ctrl+,** | Class Manager / Settings |
 | **F6 / F7 / F8** | review mode / dashboard / HTML report |
 | **Ctrl+K** / **?** | command palette / every shortcut |
+
+**The same keys in every annotation tool.** ROI Studio, LabelImg Master and
+LabelImg Shapes share one keymap - D / A for images, Ctrl+S to save, Ctrl+0 to
+fit, V / H / W / P for the tools, Ctrl+Shift+D to move an image out - and any
+key can be changed in that tool's **Settings → Shortcuts**.
 
 With the select tool: drag a box to move it, drag any of its eight handles to
 resize, Shift+click to add to the selection, drag on empty space to
@@ -253,16 +314,22 @@ untouched, and the two keep separate class lists.
 | **E** | ellipse - drag its box (Shift for a circle), then turn it |
 | **F** | freehand - hold the button and trace the outline |
 | **S** | AI select - click the object and the outline is proposed |
-| **V** / **H** (or hold Space) | select / pan |
+| **Y** | auto-label with your own YOLO model - a rectangle for every object |
+| **V** / **H** (or hold Space and drag) | select / pan |
+| **Space** (a tap) | mark the image verified |
 | **1 … 9, 0** | pick a class; with a shape selected, relabel it |
 | **[** / **]** | rotate the selection 15° (Shift while dragging snaps to 15°) |
-| **D** / **A** | next / previous image - leaving an image saves it |
+| **D** / **A** (or PgDown / PgUp, or the round arrows on the image) | next / previous image - leaving an image saves it |
 | **Ctrl+S** | save (an image saved with no shapes counts as background) |
+| **Ctrl+Shift+D** | move the image (and its shapes file) into `deleted_images` |
+| **Ctrl+0** / **Z** / **L** | fit / zoom to the selection / show class names |
 | **Ctrl+C** / **Ctrl+X** / **Ctrl+V** | copy / cut / paste the selected shapes - onto any other image |
 | **Ctrl+Shift+V** | add every shape from the previous image |
 | **Ctrl+Z** / **Ctrl+Y** | undo / redo - while a polygon is being drawn, Ctrl+Z (or Backspace) takes back just the last point |
 | **Ctrl+E** / **Ctrl+D** / **Del** | change class / duplicate / delete |
-| **Ctrl+M** / **Ctrl+Shift+E** | Class Manager / export |
+| **Ctrl+M** / **Ctrl+Shift+E** / **Ctrl+,** | Class Manager / export / Settings |
+
+Every key above can be changed in **Settings → Keyboard shortcuts**.
 
 With the select tool: drag a shape to move it; oriented boxes and ellipses have
 eight handles that resize along their own axes, circles have four that change
@@ -353,13 +420,42 @@ click on a new image waits; every click after that is immediate.
 Without onnxruntime and numpy the tool simply says what to install, and
 everything else in Annotex works exactly as before.
 
+### Auto-label with your own YOLO model
+
+Bring the detector you trained - an `.onnx` export, e.g. from Ultralytics with
+`yolo export model=best.pt format=onnx` - and let it propose the boxes.
+Choose it once in **Tools → YOLO model…** (LabelImg Master and LabelImg
+Shapes); YOLOv5, v8 / v11 and exports with NMS built in are all understood.
+
+* **On the image - Y.** Every object the model finds is proposed, dashed, with
+  its confidence. Click a proposal to drop it (click again to bring it back),
+  **Enter** keeps the rest, **Esc** drops them all. LabelImg Master gets
+  boxes, LabelImg Shapes rectangles. **Ctrl+Z** takes them back like anything
+  else.
+* **The whole folder - Tools → Pre-label the folder with YOLO….** The model runs
+  in the background over every image that has no annotation yet. Images that
+  already have one are never touched, and nothing is written where the model
+  finds nothing - then you review the folder as usual.
+
+The model's classes are matched to your project's by name. For any that do
+not match you choose once - map it to an existing class, add it as a new one,
+or ignore it - and the choice is remembered for that model (*Forget class
+choices* asks again). The confidence is set in the same dialog. The model runs
+on this machine; nothing is uploaded. Detection models only: segmentation,
+oriented-box, classification and pose exports are refused with a message.
+
 ---
 
 ## ROI Studio
 
 Unchanged in behaviour and outputs, and it still reads its own settings file.
 See its welcome tour (Window → Show the welcome tour) and `?` for every
-shortcut. Outputs: `roi_annotations.xlsx`, `roi_annotations.json`,
+shortcut. Its keys follow the shared keymap: **D** / **A** next / previous
+image, **Ctrl+S** save, **N** no_roi, **V** / **H** / **W** / **P** / **C** /
+**F** select / pan / rectangle / polygon / circle / freehand, **Ctrl+D**
+duplicate, **Ctrl+Shift+V** the previous image's ROIs, **Ctrl+0** / **Ctrl+1**
+fit / 100 %, **Ctrl+Shift+D** move the image into `deleted_images` (its rows
+leave the outputs), **Ctrl+Shift+S** export now - all changeable in Settings. Outputs: `roi_annotations.xlsx`, `roi_annotations.json`,
 `roi_map.json`, `printed_roi/`, `no_roi/`, and COCO / YOLO-seg / VOC / mask
 exports.
 

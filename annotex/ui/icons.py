@@ -9,7 +9,7 @@ one definition serves both themes and the accent state.
 from __future__ import annotations
 
 from PySide6.QtCore import QByteArray, QRectF, Qt
-from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtGui import QGuiApplication, QIcon, QIconEngine, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
 # Stroke-based icons: {name: svg body drawn in a 24x24 viewBox}
@@ -89,6 +89,25 @@ _BODY = {
     "magic": '<path d="M4 20 15 9"/><path d="M13.5 7.5 16.5 10.5"/><path d="M18 3v3M21.5 4.5 19 7M21 9.5h-3"/><path d="M6.5 3.5 7.5 6l2.5 1-2.5 1-1 2.5-1-2.5L3 7l2.5-1Z"/>',
     "paste": '<rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1Z"/><path d="M9 12h6M9 16h4"/>',
     "background": '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 16.5 17 7.5"/>',
+    # ── workspace folding ───────────────────────────────────
+    "chevron_up": '<path d="M5.5 15 12 8.5 18.5 15"/>',
+    "chevron_down": '<path d="M5.5 9 12 15.5 18.5 9"/>',
+    "panel_open": '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M14.5 4.5v15"/><path d="M10.5 9.5 8 12l2.5 2.5"/>',
+    "panel_close": '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M14.5 4.5v15"/><path d="M8 9.5 10.5 12 8 14.5"/>',
+    "dataset": '<path d="M4 7.5 12 3.5l8 4-8 4Z"/><path d="M4 12l8 4 8-4"/><path d="M4 16.5l8 4 8-4"/>',
+    "display": '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20.5h6M12 16.5v4"/>',
+    "folder_zip": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M13 9v2M13 13v2M11 11v2M11 15v2"/>',
+    "split": '<rect x="3.5" y="4.5" width="7" height="15" rx="1.5"/><rect x="13.5" y="4.5" width="7" height="15" rx="1.5"/>',
+    "rename": '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z"/><path d="M13.5 6.5l4 4"/>',
+    "pair": '<rect x="3" y="6" width="8" height="12" rx="1.5"/><path d="M14 8h7M14 12h7M14 16h5"/>',
+    # a box inside viewfinder corners - "the model finds the objects"
+    "scan": '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8'
+            'M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/>'
+            '<rect x="8" y="8.5" width="8" height="7" rx="1"/>',
+    # a picture with a cross - "take this image out", unlike the trash can for shapes
+    "image_remove": '<path d="M13 19.5H5.5a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2V12"/>'
+                    '<circle cx="9" cy="9.5" r="1.6"/><path d="M3.5 16.5 9 11.5l4 3.5"/>'
+                    '<path d="M16 16l5 5M21 16l-5 5"/>',
 }
 
 _TEMPLATE = (
@@ -113,26 +132,46 @@ def svg_text(name: str, colour: str = "#000000", size: int = 24,
     return _TEMPLATE.format(size=size, colour=colour, weight=weight, body=body)
 
 
+def screen_ratio() -> float:
+    """The sharpest device pixel ratio of any connected screen.
+
+    Windows at 125 % or 150 % scaling has a ratio of 1.25 or 1.5; a picture
+    drawn for 1.0 and stretched to that is what looks jagged."""
+    try:
+        app = QGuiApplication.instance()
+        if app is None:
+            return 1.0
+        return max([float(s.devicePixelRatio()) for s in app.screens()] or [1.0])
+    except Exception:
+        return 1.0
+
+
+def _render(svg: str, painter: QPainter, rect: QRectF) -> None:
+    renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+    renderer.render(painter, rect)
+
+
 def pixmap(name: str, colour: str, size: int = 20, weight: float = 1.8,
            ratio: float = 1.0) -> QPixmap:
-    key = (name, colour, int(size), round(weight, 2), round(ratio, 2))
+    """The icon as a pixmap, drawn for the sharpest screen attached - never
+    below the ratio asked for - so it is never stretched up."""
+    scale = max(1.0, float(ratio or 1.0), screen_ratio())
+    key = (name, colour, int(size), round(weight, 2), round(scale, 2))
     cached = _CACHE.get(key)
     if cached is not None:
         return cached
 
-    scale = max(1.0, float(ratio))
-    px = QPixmap(int(size * scale), int(size * scale))
+    px = QPixmap(max(1, int(round(size * scale))), max(1, int(round(size * scale))))
     px.setDevicePixelRatio(scale)
     px.fill(Qt.GlobalColor.transparent)
     try:
-        renderer = QSvgRenderer(QByteArray(
-            svg_text(name, colour, size, weight).encode("utf-8")))
         painter = QPainter(px)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         # The pixmap carries a device pixel ratio, so the painter already
         # works in logical units - the target rect is the logical size, not
         # the device size, or the glyph is drawn oversized and clipped.
-        renderer.render(painter, QRectF(0, 0, size, size))
+        _render(svg_text(name, colour, size, weight), painter, QRectF(0, 0, size, size))
         painter.end()
     except Exception:
         pass
@@ -140,27 +179,64 @@ def pixmap(name: str, colour: str, size: int = 20, weight: float = 1.8,
     return px
 
 
+class SvgIconEngine(QIconEngine):
+    """Draws the icon from its SVG at exactly the size and screen scale Qt
+    asks for, every time - there is no pre-rendered bitmap to stretch, so it
+    is sharp at 100 %, 125 %, 150 % or 300 %."""
+
+    def __init__(self, name, normal, active=None, weight=1.8):
+        super().__init__()
+        self.name = name
+        self.normal = normal
+        self.active = active or normal
+        self.weight = weight
+
+    def _colour(self, state) -> str:
+        return self.active if state == QIcon.State.On else self.normal
+
+    def paint(self, painter, rect, mode, state):
+        painter.save()
+        try:
+            if mode == QIcon.Mode.Disabled:
+                painter.setOpacity(0.4)
+            side = min(rect.width(), rect.height())
+            target = QRectF(rect.x() + (rect.width() - side) / 2.0,
+                            rect.y() + (rect.height() - side) / 2.0, side, side)
+            _render(svg_text(self.name, self._colour(state), 24, self.weight), painter, target)
+        except Exception:
+            pass
+        finally:
+            painter.restore()
+
+    def scaledPixmap(self, size, mode, state, scale):
+        scale = max(1.0, float(scale or 1.0))
+        px = QPixmap(max(1, int(round(size.width() * scale))),
+                     max(1, int(round(size.height() * scale))))
+        px.fill(Qt.GlobalColor.transparent)
+        px.setDevicePixelRatio(scale)
+        painter = QPainter(px)
+        self.paint(painter, QRectF(0, 0, size.width(), size.height()).toRect(), mode, state)
+        painter.end()
+        return px
+
+    def pixmap(self, size, mode, state):
+        return self.scaledPixmap(size, mode, state, screen_ratio())
+
+    def clone(self):
+        return SvgIconEngine(self.name, self.normal, self.active, self.weight)
+
+
 def icon(name: str, colour: str, size: int = 20, weight: float = 1.8,
          ratio: float = 2.0) -> QIcon:
-    """A QIcon rendered at 2x by default, so it stays sharp when scaled."""
-    result = QIcon()
-    result.addPixmap(pixmap(name, colour, size, weight, ratio))
-    return result
+    """A vector QIcon: sharp at any size and any display scaling.  `size` and
+    `ratio` are kept for callers; the engine draws at whatever is asked."""
+    return QIcon(SvgIconEngine(name, colour, None, weight))
 
 
 def dual_icon(name: str, normal: str, active: str, size: int = 20,
               weight: float = 1.8) -> QIcon:
     """An icon that switches colour when its button is checked or pressed."""
-    result = QIcon()
-    result.addPixmap(pixmap(name, normal, size, weight, 2.0),
-                     QIcon.Mode.Normal, QIcon.State.Off)
-    result.addPixmap(pixmap(name, active, size, weight, 2.0),
-                     QIcon.Mode.Normal, QIcon.State.On)
-    result.addPixmap(pixmap(name, active, size, weight, 2.0),
-                     QIcon.Mode.Active, QIcon.State.On)
-    result.addPixmap(pixmap(name, normal, size, weight, 2.0),
-                     QIcon.Mode.Active, QIcon.State.Off)
-    return result
+    return QIcon(SvgIconEngine(name, normal, active, weight))
 
 
 # ── application marks ─────────────────────────────────────────
@@ -223,8 +299,27 @@ def app_icon(accent: str = "#df5e3b", background: str = "#14171d",
 
 def mark_pixmap(mark: str, accent: str, background: str,
                 size: int = 48) -> QPixmap:
-    """The app tile as a pixmap, for the dashboard cards."""
-    return app_icon(accent, background, mark).pixmap(size, size)
+    """The app tile as a pixmap, for the dashboard cards - drawn for the
+    screen's real scale rather than picked from the fixed icon sizes."""
+    body = _MARKS.get(mark)
+    if body is None:
+        body = ('<g transform="translate(12 12) scale(1.6667)" fill="none" stroke="{fg}" '
+                'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
+                + _BODY.get(mark, _BODY["info"]).replace("{", "{{").replace("}", "}}") + '</g>')
+    scale = max(1.0, screen_ratio())
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">'
+           '<rect width="64" height="64" rx="14" fill="{bg}"/>' + body + '</svg>').format(
+        bg=background, fg=accent)
+    px = QPixmap(max(1, int(round(size * scale))), max(1, int(round(size * scale))))
+    px.setDevicePixelRatio(scale)
+    px.fill(Qt.GlobalColor.transparent)
+    try:
+        painter = QPainter(px)
+        _render(svg, painter, QRectF(0, 0, size, size))
+        painter.end()
+    except Exception:
+        pass
+    return px
 
 
 def clear_cache() -> None:

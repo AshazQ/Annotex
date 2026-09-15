@@ -18,7 +18,7 @@ from annotex.ui import shortcuts as _shared
 # (id, label, default key, category, icon, description)
 ACTIONS = [
     # ── batch ─────────────────────────────────────────────
-    ("open_folder", "Open image folder…", "Ctrl+U", "Batch", "folder",
+    ("open_folder", "Open image folder…", "Ctrl+O", "Batch", "folder",
      "Choose the folder of images to label"),
     ("change_save_dir", "Change annotation folder…", "Ctrl+R", "Batch", "folder",
      "Save annotations somewhere other than beside the images"),
@@ -49,6 +49,11 @@ ACTIONS = [
     ("tool_ai", "AI select (SAM)", "S", "Tools", "magic",
      "Click the object and the model proposes the box - right-click or "
      "Shift+click to exclude something, Enter keeps it"),
+    ("auto_label", "Auto-label with your YOLO model", "Y", "Tools", "scan",
+     "Your detector proposes every object on this image - click a proposal to drop it, "
+     "Enter keeps the rest"),
+    ("prelabel_folder", "Pre-label the folder with YOLO…", "", "Tools", "scan",
+     "Run your detector over every image that has no annotation yet, in the background"),
     ("cancel", "Cancel / deselect", "Escape", "Tools", "cross", ""),
 
     # ── editing ───────────────────────────────────────────
@@ -58,7 +63,7 @@ ACTIONS = [
     ("delete_box", "Delete selected boxes", "Delete", "Edit", "trash", ""),
     ("duplicate_box", "Duplicate selected boxes", "Ctrl+D", "Edit", "copy", ""),
     ("select_all", "Select all boxes", "Ctrl+A", "Edit", "grid", ""),
-    ("clear_all", "Clear every box on this image", "Ctrl+Shift+C", "Edit",
+    ("clear_all", "Clear every box on this image", "Ctrl+Shift+Del", "Edit",
      "clear", "Remove every box from the current image"),
     ("edit_label", "Change the class of the selection…", "Ctrl+E", "Edit",
      "tag", ""),
@@ -89,8 +94,8 @@ ACTIONS = [
     # ── classes ───────────────────────────────────────────
     ("find_class", "Find a class", "/", "Classes", "search",
      "Jump to the class search box"),
-    ("next_class", "Next class", "Ctrl+.", "Classes", "next", ""),
-    ("prev_class", "Previous class", "Ctrl+,", "Classes", "prev", ""),
+    ("next_class", "Next class", "Ctrl+]", "Classes", "next", ""),
+    ("prev_class", "Previous class", "Ctrl+[", "Classes", "prev", ""),
     ("toggle_sticky", "Keep the last-used class", "", "Classes", "tag",
      "A new box takes the class of the box before it"),
     ("toggle_skip_dialog", "Skip the label dialog", "", "Classes", "tag",
@@ -115,22 +120,22 @@ ACTIONS = [
      "Save", "settings", "Write a .labelimg.json beside the images so anyone "
      "who opens this folder gets the same setup"),
     ("delete_image", "Move image to deleted_images", "Ctrl+Shift+D", "Save",
-     "trash", "Nothing is erased - the image and its annotation are moved"),
+     "image_remove", "Nothing is erased - the image and its annotation are moved"),
     ("copy_image", "Copy image to copy_images", "", "Save", "image_copy", ""),
 
     # ── view ──────────────────────────────────────────────
-    ("zoom_in", "Zoom in", "Ctrl++", "View", "zoom_in", ""),
+    ("zoom_in", "Zoom in", "Ctrl+=", "View", "zoom_in", ""),
     ("zoom_out", "Zoom out", "Ctrl+-", "View", "zoom_out", ""),
-    ("zoom_fit", "Fit image to window", "Ctrl+F", "View", "zoom_fit", ""),
+    ("zoom_fit", "Fit image to window", "Ctrl+0", "View", "zoom_fit", ""),
     ("zoom_width", "Fit image width", "Ctrl+Shift+F", "View", "zoom_fit", ""),
-    ("zoom_actual", "Zoom to 100%", "Ctrl+=", "View", "zoom_fit", ""),
+    ("zoom_actual", "Zoom to 100%", "Ctrl+1", "View", "zoom_fit", ""),
     ("zoom_selection", "Zoom to selection", "Z", "View", "zoom_in", ""),
     ("zoom_all", "Zoom to all boxes", "Shift+Z", "View", "zoom_fit", ""),
     ("brighten", "Brighter", "Ctrl+Up", "View", "brightness",
      "Lift a dark night-time frame"),
     ("darken", "Darker", "Ctrl+Down", "View", "brightness", ""),
-    ("reset_brightness", "Reset brightness", "Ctrl+0", "View", "brightness", ""),
-    ("toggle_labels", "Show or hide class names on boxes", "Ctrl+Shift+P",
+    ("reset_brightness", "Reset brightness", "Ctrl+Shift+0", "View", "brightness", ""),
+    ("toggle_labels", "Show or hide class names on boxes", "L",
      "View", "eye", ""),
     ("toggle_square", "Always draw squares", "", "View", "square", ""),
     ("toggle_side", "Show or hide the side panel", "Ctrl+Shift+L", "View",
@@ -148,7 +153,9 @@ ACTIONS = [
      "report", ""),
     ("ai_model", "AI model (SAM)…", "", "Windows", "magic",
      "Point the AI tool at a Segment Anything encoder and decoder"),
-    ("settings", "Settings…", "", "Windows", "settings", ""),
+    ("yolo_model", "YOLO model…", "", "Windows", "scan",
+     "Choose your own YOLO detector (.onnx) for auto-labelling"),
+    ("settings", "Settings…", "Ctrl+,", "Windows", "settings", ""),
     ("shortcuts_sheet", "Keyboard shortcuts", "?", "Windows", "keyboard", ""),
     ("command_palette", "Command palette", "Ctrl+K", "Windows", "command", ""),
     ("welcome", "Show the welcome tour", "", "Windows", "info", ""),
@@ -177,7 +184,8 @@ FIXED = [
     ]),
 ]
 
-MOUSE_HINT = ("Mouse: drag on the image with the box tool (W) to draw · click a "
+MOUSE_HINT = ("Mouse: drag on the image with the box tool (W) to draw · the round "
+              "arrows at the right of the image step between images · click a "
               "box to select it, Shift+click to add to the selection · drag a "
               "box to move it, drag a corner or edge handle to resize · "
               "double-click a box to change its class · right-click for its "

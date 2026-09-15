@@ -27,7 +27,7 @@ PACKAGES = (("PySide6", "PySide6-Essentials", "the user interface"),
             ("openpyxl", "openpyxl", "ROI Studio's spreadsheet"),
             ("lxml", "lxml", "LabelImg Master's Pascal VOC files"))
 TOOL_IDS = ("roi", "labelimg", "shapes", "frames", "trim", "vconvert", "merge", "iconvert",
-            "sorter")
+            "sorter", "dataset")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -255,6 +255,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def apply_interface_size(settings) -> None:
+    """Interface size works through Qt's scale factor, which must be in place
+    before the application object exists.  A QT_SCALE_FACTOR someone set
+    themselves always wins."""
+    if os.environ.get("QT_SCALE_FACTOR"):
+        return
+    try:
+        from .config import interface_factor
+        factor = interface_factor(settings)
+    except Exception:
+        return
+    if abs(factor - 1.0) > 0.001:
+        os.environ["QT_SCALE_FACTOR"] = "%.2f" % factor
+
+
 def run(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if args.check:
@@ -267,6 +282,12 @@ def run(argv=None) -> int:
     if not ok:
         _print_missing(problems)
         return 2
+
+    from .config import ShellSettings
+    settings = ShellSettings()
+    if args.reset_settings:
+        settings.reset()
+    apply_interface_size(settings)
 
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
@@ -282,11 +303,6 @@ def run(argv=None) -> int:
     app.setApplicationVersion(SUITE_VERSION)
     app.setOrganizationName("Annotex")
     app.setStyle("Fusion")
-
-    from .config import ShellSettings
-    settings = ShellSettings()
-    if args.reset_settings:
-        settings.reset()
 
     from .shell.window import ShellWindow
     window = ShellWindow(app, settings)

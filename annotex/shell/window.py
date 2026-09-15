@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QByteArray, QSize, Qt
+from PySide6.QtCore import QByteArray, QProcess, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout,
                                QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget,
@@ -52,7 +52,9 @@ class ShellWindow(QMainWindow):
         self.theme = resolve_theme(self.theme_setting, app)
 
         self.setWindowTitle(SUITE_NAME)
-        self.setMinimumSize(1120, 720)
+        # Small enough for a laptop at 150 % scaling; the tools lay themselves
+        # out to whatever room there is.
+        self.setMinimumSize(640, 460)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -79,6 +81,7 @@ class ShellWindow(QMainWindow):
         self.home.refresh()
         self._sync_tabs()
         self._sync_jobs()
+        QTimer.singleShot(0, self._measure_screen)
 
     # ══════════════════════════════════════════════════════
     # LAYOUT
@@ -127,6 +130,12 @@ class ShellWindow(QMainWindow):
         self.jobs_button.setToolTip("Background jobs from every tool")
         self.jobs_button.clicked.connect(self.show_jobs)
         layout.addWidget(self.jobs_button)
+        self.display_button = QPushButton("")
+        self.display_button.setObjectName("SuiteTab")
+        self.display_button.setToolTip("Display - interface size for the whole of Annotex")
+        self.display_button.setIconSize(QSize(16, 16))
+        self.display_button.clicked.connect(self.show_display)
+        layout.addWidget(self.display_button)
         return bar
 
     def _build_actions(self) -> None:
@@ -180,6 +189,7 @@ class ShellWindow(QMainWindow):
             tab.setStyleSheet("QPushButton#SuiteTab:checked { background: %s; color: %s; }"
                               % (tool_theme["accentSoft"], theme["title"]))
         self.jobs_button.setIcon(icons.icon("history", theme["sub"], 16))
+        self.display_button.setIcon(icons.icon("display", theme["sub"], 16))
         self.home.set_theme(theme)
         for page in self.pages.values():
             apply = getattr(page, "tool_apply_theme", None)
@@ -319,6 +329,47 @@ class ShellWindow(QMainWindow):
     # ══════════════════════════════════════════════════════
     # LIFECYCLE
     # ══════════════════════════════════════════════════════
+    def show_display(self) -> None:
+        from .display import DisplayDialog
+        dialog = DisplayDialog(self, self.settings)
+        if not dialog.exec():
+            return
+        before = self.settings.get("ui_scale", "auto")
+        chosen = dialog.chosen()
+        self.settings.set("ui_scale", chosen)
+        if dialog.restart_requested:
+            self.restart()
+        elif chosen != before:
+            QMessageBox.information(self, "Display",
+                                    "The new interface size is used the next time Annotex starts.")
+
+    def _measure_screen(self) -> None:
+        """Work out what Automatic means on the screen in use, for next start."""
+        try:
+            from ..config import auto_factor
+            screen = self.screen() or self.app.primaryScreen()
+            area = screen.availableGeometry()
+            applied = float(os.environ.get("QT_SCALE_FACTOR") or 1.0)
+            factor = auto_factor(area.width() * applied, area.height() * applied)
+            if abs(float(self.settings.get("auto_scale", 1.0) or 1.0) - factor) > 0.001:
+                self.settings.set("auto_scale", factor)
+        except Exception:
+            pass
+
+    def restart(self) -> bool:
+        """Close as quitting does - every tool saves, jobs are confirmed - then
+        start Annotex again.  False when the close was cancelled."""
+        from .display import restart_command
+        if not self.close():
+            return False
+        program, arguments, folder = restart_command()
+        try:
+            QProcess.startDetached(program, arguments, folder)
+        except Exception:
+            pass
+        self.app.quit()
+        return True
+
     def quit(self) -> None:
         self.close()
 
@@ -327,6 +378,12 @@ class ShellWindow(QMainWindow):
             raw = self.settings.get("window_geometry", "")
             if raw:
                 self.restoreGeometry(QByteArray.fromBase64(raw.encode("ascii")))
+                # Saved on a bigger screen, or at a smaller interface size:
+                # never come back larger than the screen now in use.
+                area = (self.screen() or self.app.primaryScreen()).availableGeometry()
+                if self.width() > area.width() or self.height() > area.height():
+                    self.resize(min(self.width(), area.width()), min(self.height(), area.height()))
+                    self.move(area.topLeft())
                 return
             screen = self.app.primaryScreen().availableGeometry()
             self.resize(min(1640, int(screen.width() * 0.88)), min(1020, int(screen.height() * 0.88)))

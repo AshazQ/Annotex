@@ -179,6 +179,9 @@ DEFAULT_SETTINGS = {
     "api_push_timeout": 15,
     "window_geometry": "",
     "window_state": "",
+    # Workspace: what is folded away for a bigger image.
+    "side_collapsed": False,
+    "filmstrip_folded": False,
 }
 
 

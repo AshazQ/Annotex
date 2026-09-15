@@ -38,6 +38,8 @@ from .dialogs.welcome_dialog import AboutDialog, WelcomeDialog
 from .filmstrip import FilmStrip
 from .palette import apply_palette, resolve_theme, stylesheet  # noqa: F401
 from annotex.ui.palette import install_theme, toggled_setting
+from annotex.ui import keymap
+from annotex.ui.workspace import ElidedLabel, ToolRail, assemble
 from .panels import (CommentBox, MiniMap, RoiListPanel, StatsPanel,
                      VertexInspector, divider)
 
@@ -111,7 +113,7 @@ class MainWindow(QMainWindow):
         self._pool = QThreadPool()
 
         self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
-        self.setMinimumSize(1120, 700)
+        self.setMinimumSize(640, 440)
         self.setWindowIcon(icons.app_icon(self.theme["accent"],
                                           self.theme["appBg"]))
 
@@ -146,6 +148,7 @@ class MainWindow(QMainWindow):
             "prev_image": self.prev_image,
             "first_image": lambda: self.go_to_index(0),
             "last_image": lambda: self.go_to_index(len(self.image_files) - 1),
+            "delete_image": self.delete_image,
             "finish_shape": lambda: self.canvas.finish_draft(),
             "cancel_shape": lambda: self.canvas.cancel_draft(),
             "undo_point": lambda: self.canvas.undo_draft_point(),
@@ -201,9 +204,8 @@ class MainWindow(QMainWindow):
             if desc:
                 action.setToolTip(desc)
                 action.setStatusTip(desc)
-            key = self.keys.get(action_id, "")
-            if key:
-                action.setShortcut(QKeySequence(key))
+            action.setShortcuts([QKeySequence(k) for k in
+                                 keymap.sequences("roi", action_id, self.keys.get(action_id, ""))])
             action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
             handler = handlers.get(action_id)
             if handler is not None:
@@ -256,138 +258,83 @@ class MainWindow(QMainWindow):
     # LAYOUT
     # ══════════════════════════════════════════════════════
     def _build_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(14, 12, 14, 10)
-        root.setSpacing(10)
-
-        root.addWidget(self._build_header())
-
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
-        self.splitter.setHandleWidth(8)
-        root.addWidget(self.splitter, 1)
-
-        # ── canvas column ─────────────────────────────────
-        canvas_column = QWidget()
-        canvas_layout = QVBoxLayout(canvas_column)
-        canvas_layout.setContentsMargins(0, 0, 0, 0)
-        canvas_layout.setSpacing(8)
-
+        """The image first: the tools in a pill rail on the left, the side panel
+        folding into a strip on the right, and the filmstrip folding under a
+        one-line bar that carries the batch and image details."""
         self.canvas_frame = QFrame()
         self.canvas_frame.setObjectName("Card")
         frame_layout = QVBoxLayout(self.canvas_frame)
-        frame_layout.setContentsMargins(4, 4, 4, 4)
+        frame_layout.setContentsMargins(3, 3, 3, 3)
         self.canvas = Canvas()
         frame_layout.addWidget(self.canvas)
-        canvas_layout.addWidget(self.canvas_frame, 1)
-
         self.filmstrip = FilmStrip()
-        canvas_layout.addWidget(self.filmstrip)
-        self.splitter.addWidget(canvas_column)
 
-        # ── side column ───────────────────────────────────
-        self.side = self._build_side()
-        self.splitter.addWidget(self.side)
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
-        self.splitter.setSizes([1000, 330])
+        self.title_label = QLabel(APP_TAGLINE, self)
+        self.title_label.hide()
+        self.folder_label = ElidedLabel("No batch loaded")
+        self.folder_label.setObjectName("Subtitle")
+        self.site_chip = QLabel("")
+        self.site_chip.setObjectName("Subtitle")
+        self.site_chip.setVisible(False)
+
+        self.workspace = assemble(self, self._build_rail(), self.canvas_frame, self.filmstrip,
+                                  self._build_side(), self.settings,
+                                  info=((self.folder_label, 1), (self.site_chip, 0)),
+                                  side_width=330, shortcut="Ctrl+Shift+L",
+                                  on_prev=self.act("prev_image").trigger,
+                                  on_next=self.act("next_image").trigger)
+        self.splitter = self.workspace.splitter
+        self.side = self.workspace.side
+        # What stays within reach while the panel is folded away.
+        self.strip_buttons = {}
+        for action_id in ("save_roi", "mark_no_roi", "prev_image", "next_image"):
+            button = self._rail_button(action_id)
+            button.clicked.connect(self.act(action_id).trigger)
+            self.strip_buttons[action_id] = button
+            self.side.add_strip_button(button)
 
         self._build_statusbar()
         self._wire_canvas()
 
-    def _build_header(self) -> QWidget:
-        header = QWidget()
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(2, 0, 2, 0)
-        layout.setSpacing(10)
+    def _rail_button(self, action_id, checkable=False) -> QPushButton:
+        action = self.act(action_id)
+        button = QPushButton()
+        button.setObjectName("Tool")
+        button.setCheckable(checkable)
+        button.setIconSize(QSize(19, 19))
+        key = self.keys.get(action_id, "")
+        button.setToolTip("%s%s" % (action.text(), ("   [%s]" % key) if key else ""))
+        return button
 
-        title_box = QVBoxLayout()
-        title_box.setSpacing(0)
-        self.title_label = QLabel(APP_TAGLINE)
-        self.title_label.setObjectName("Title")
-        self.folder_label = QLabel("No batch loaded")
-        self.folder_label.setObjectName("Subtitle")
-        title_box.addWidget(self.title_label)
-        title_box.addWidget(self.folder_label)
-        layout.addLayout(title_box)
-
-        self.site_chip = QLabel("")
-        self.site_chip.setObjectName("Subtitle")
-        self.site_chip.setVisible(False)
-        layout.addWidget(self.site_chip)
-        layout.addStretch(1)
-
-        # tool dock
-        self.tool_bar = QFrame()
-        self.tool_bar.setObjectName("Toolbar")
-        tools = QHBoxLayout(self.tool_bar)
-        tools.setContentsMargins(6, 5, 6, 5)
-        tools.setSpacing(3)
+    def _build_rail(self) -> ToolRail:
+        """Every button the header held, top to bottom in a pill: drawing
+        tools, then editing, then the windows."""
+        rail = ToolRail()
         self.tool_buttons = {}
         self.tool_group = QButtonGroup(self)
         self.tool_group.setExclusive(True)
         for action_id, tool in TOOL_ACTIONS.items():
-            action = self.act(action_id)
-            button = QPushButton()
-            button.setObjectName("Tool")
-            button.setCheckable(True)
-            button.setFixedSize(34, 32)
-            button.setIconSize(QSize(19, 19))
-            key = self.keys.get(action_id, "")
-            button.setToolTip("%s%s" % (action.text(),
-                                        ("   [%s]" % key) if key else ""))
+            button = self._rail_button(action_id, checkable=True)
             button.clicked.connect(lambda _c=False, t=tool: self.set_tool(t))
             self.tool_group.addButton(button)
             self.tool_buttons[tool] = button
-            tools.addWidget(button)
-        layout.addWidget(self.tool_bar)
-
-        # quick actions
-        self.quick_bar = QFrame()
-        self.quick_bar.setObjectName("Toolbar")
-        quick = QHBoxLayout(self.quick_bar)
-        quick.setContentsMargins(6, 5, 6, 5)
-        quick.setSpacing(3)
+            rail.add(button)
+        rail.add_separator()
         self.quick_buttons = {}
         for action_id in ("undo", "redo", "delete_roi", "duplicate_roi",
-                          "clear_all", "copy_previous"):
-            action = self.act(action_id)
-            button = QPushButton()
-            button.setObjectName("Tool")
-            button.setFixedSize(34, 32)
-            button.setIconSize(QSize(19, 19))
-            key = self.keys.get(action_id, "")
-            button.setToolTip("%s%s" % (action.text(),
-                                        ("   [%s]" % key) if key else ""))
-            button.clicked.connect(action.trigger)
+                          "clear_all", "copy_previous", "delete_image"):
+            button = self._rail_button(action_id)
+            button.clicked.connect(self.act(action_id).trigger)
             self.quick_buttons[action_id] = button
-            quick.addWidget(button)
-        layout.addWidget(self.quick_bar)
-
-        # window actions
-        self.window_bar = QFrame()
-        self.window_bar.setObjectName("Toolbar")
-        window_row = QHBoxLayout(self.window_bar)
-        window_row.setContentsMargins(6, 5, 6, 5)
-        window_row.setSpacing(3)
+            rail.add(button)
+        rail.add_separator()
         self.window_buttons = {}
-        for action_id in ("review_mode", "dashboard", "settings",
-                          "shortcuts_sheet"):
-            action = self.act(action_id)
-            button = QPushButton()
-            button.setObjectName("Tool")
-            button.setFixedSize(34, 32)
-            button.setIconSize(QSize(19, 19))
-            key = self.keys.get(action_id, "")
-            button.setToolTip("%s%s" % (action.text(),
-                                        ("   [%s]" % key) if key else ""))
-            button.clicked.connect(action.trigger)
+        for action_id in ("review_mode", "dashboard", "settings", "shortcuts_sheet"):
+            button = self._rail_button(action_id)
+            button.clicked.connect(self.act(action_id).trigger)
             self.window_buttons[action_id] = button
-            window_row.addWidget(button)
-        layout.addWidget(self.window_bar)
-        return header
+            rail.add(button)
+        return rail
 
     def _build_side(self) -> QWidget:
         panel = QFrame()
@@ -605,6 +552,9 @@ class MainWindow(QMainWindow):
         self.minimap.set_theme(self.theme)
         self.roi_panel.set_theme(self.theme)
         self.stats_panel.set_theme(self.theme)
+        self.workspace.apply_theme(self.theme)
+        for action_id, button in self.strip_buttons.items():
+            button.setIcon(icons.icon(sc.BY_ID[action_id][4], self.theme["text"], 19))
 
         for action_id, tool in TOOL_ACTIONS.items():
             name = sc.BY_ID[action_id][4]
@@ -613,7 +563,7 @@ class MainWindow(QMainWindow):
                                 self.theme["onAccent"], 19))
         for action_id, button in self.quick_buttons.items():
             colour = (self.theme["danger"] if action_id in ("delete_roi",
-                                                            "clear_all")
+                                                            "clear_all", "delete_image")
                       else self.theme["text"])
             button.setIcon(icons.icon(sc.BY_ID[action_id][4], colour, 19))
         for action_id, button in self.window_buttons.items():
@@ -1168,6 +1118,62 @@ class MainWindow(QMainWindow):
                          % (len(self.canvas.shapes), name), "good")
             if self.settings.get("auto_advance_on_save", True):
                 self._advance()
+
+    def delete_image(self) -> None:
+        """Take the image on screen out of the batch: it moves into
+        deleted_images (with any printed_roi / no_roi copy of it), and its rows
+        leave the spreadsheet and JSON.  Nothing is erased."""
+        import shutil
+        name = self.current_name()
+        if name is None:
+            self._status("No image loaded", "warning")
+            return
+        if self.read_only:
+            self._status("This batch is open read-only", "warning")
+            return
+        answer = QMessageBox.question(
+            self, "Move image out of the batch",
+            "Move %s into deleted_images?\n\nIts ROIs are taken out of the batch outputs too. "
+            "Nothing is erased: move the image back and annotate it again to restore it." % name)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        target = os.path.join(self.folder, "deleted_images")
+
+        def free_name(file_name):
+            stem, ext = os.path.splitext(file_name)
+            candidate, counter = os.path.join(target, file_name), 2
+            while os.path.exists(candidate):
+                candidate = os.path.join(target, "%s_%d%s" % (stem, counter, ext))
+                counter += 1
+            return candidate
+
+        try:
+            os.makedirs(target, exist_ok=True)
+            shutil.move(os.path.join(self.folder, name), free_name(name))
+        except OSError as exc:
+            self._status("Could not move the image: %s" % exc, "danger")
+            return
+        for sub in OUTPUT_DIRS:
+            copy = os.path.join(self.folder, sub, name)
+            if os.path.isfile(copy):
+                try:
+                    shutil.move(copy, free_name("%s_%s" % (sub, name)))
+                except OSError:
+                    pass
+        self.store.purge(name)
+        self.saved_shapes.pop(name, None)
+        self.no_roi_saved.discard(name)
+        self.comments.pop(name, None)
+        report = self._flush()
+        self.dirty = False
+        self.image_files.pop(self.index)
+        self._refresh_filmstrip()
+        self._load_image(min(self.index, max(0, len(self.image_files) - 1)))
+        if getattr(report, "ok", True):
+            self._status("%s moved to deleted_images" % name, "good")
+        else:
+            self._status("%s moved to deleted_images, but the outputs could not be rewritten"
+                         % name, "warning")
 
     def mark_no_roi(self) -> None:
         name = self.current_name()
@@ -1802,8 +1808,8 @@ class MainWindow(QMainWindow):
     def _rebind_shortcuts(self) -> None:
         self.keys = sc.resolve(self.settings.get("shortcuts", {}))
         for action_id, action in self.actions_by_id.items():
-            key = self.keys.get(action_id, "")
-            action.setShortcut(QKeySequence(key) if key else QKeySequence())
+            action.setShortcuts([QKeySequence(k) for k in
+                                 keymap.sequences("roi", action_id, self.keys.get(action_id, ""))])
         for tool, button in self.tool_buttons.items():
             for action_id, mapped in TOOL_ACTIONS.items():
                 if mapped == tool:
@@ -1905,7 +1911,8 @@ class MainWindow(QMainWindow):
 
         self.act("undo").setToolTip("Undo %s" % (self.history.undo_label() or ""))
         self.act("redo").setToolTip("Redo %s" % (self.history.redo_label() or ""))
-        for action_id, button in self.quick_buttons.items():
+        for action_id, button in (list(self.quick_buttons.items())
+                                  + list(getattr(self, "strip_buttons", {}).items())):
             action = self.act(action_id)
             button.setEnabled(action.isEnabled())
             key = self.keys.get(action_id, "")

@@ -50,7 +50,7 @@ class MediaToolPage(QMainWindow):
         self._header_buttons = []
 
         self.setWindowTitle(self.TOOL_NAME)
-        self.setMinimumSize(1000, 640)
+        self.setMinimumSize(640, 440)
 
         central = QWidget()
         self.setCentralWidget(central)

@@ -35,6 +35,9 @@ from annotex.ui.palette import install_theme, resolve_theme, toggled_setting
 from annotex.ui import shortcuts as _shared_keys
 from annotex.ui.theme_picker import theme_menu
 from annotex.ui.widgets import StatsPanel, divider
+from annotex.ui.workspace import ElidedLabel, ToolRail, assemble
+from annotex.ui import keymap
+from . import shortcuts as shape_keys
 
 from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, CURVE_SEGMENTS, HOTKEY_DIGITS,
                       KIND_LABELS, KIND_POLYGON, LOCK_NAME, MAX_UNDO_STEPS, TASK_COCO,
@@ -97,7 +100,7 @@ class ShapesWindow(QMainWindow):
         self._ai_offered = False         # the model chooser is offered once
 
         self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
-        self.setMinimumSize(1080, 680)
+        self.setMinimumSize(640, 440)
         self.actions_by_id = {}
         self._build_actions()
         self._build_ui()
@@ -119,6 +122,8 @@ class ShapesWindow(QMainWindow):
     # ══════════════════════════════════════════════════════
     def _action(self, action_id, text, keys=(), slot=None, icon="", checkable=False) -> QAction:
         action = QAction(text, self)
+        if action_id in shape_keys.BY_ID:
+            keys = self._keys_for(action_id)          # the table, and any remaps, decide
         if isinstance(keys, str):
             keys = (keys,)
         if keys:
@@ -144,9 +149,45 @@ class ShapesWindow(QMainWindow):
                 self._status("Something went wrong: %s" % exc, "danger")
         return run
 
+    def _keys_for(self, action_id):
+        """The keys an action answers to: the chosen (or standard) key plus that
+        command's second keys.  Space for Verified is tapped on the canvas,
+        because holding Space pans - so it is not a window shortcut."""
+        found = keymap.sequences("shapes", action_id, self.keys.get(action_id, ""))
+        if action_id == "verify":
+            found = [key for key in found if key != "Space"]
+        return tuple(found)
+
+    def _space_verifies(self) -> bool:
+        return self.keys.get("verify", "") == "Space"
+
+    def _on_space_tap(self) -> None:
+        if self._space_verifies() and self.canvas.has_image():
+            self.act("verify").trigger()
+
+    def _rebind_shortcuts(self) -> None:
+        self.keys = shape_keys.resolve(self.settings.get("shortcuts", {}) or {})
+        for action_id, action in self.actions_by_id.items():
+            if action_id in shape_keys.BY_ID:
+                action.setShortcuts([QKeySequence(k) for k in self._keys_for(action_id)])
+        buttons = [("tool_" + tool, button) for tool, button in self.tool_buttons.items()]
+        buttons += list(self.edit_buttons.items()) + list(self.window_buttons.items())
+        buttons += list(self.strip_buttons.items())
+        for action_id, button in buttons:
+            action = self.act(action_id)
+            key = self.keys.get(action_id, "")
+            tip = action.toolTip() or action.text()
+            button.setToolTip("%s%s" % (tip, ("   [%s]" % key) if key else ""))
+
     def _build_actions(self) -> None:
+        self.keys = shape_keys.resolve(self.settings.get("shortcuts", {}) or {})
         a = self._action
         a("open_folder", "Open folder…", ("Ctrl+O", "Ctrl+U"), self.choose_folder, "folder")
+        a("delete_image", "Move image to deleted_images", "Ctrl+Shift+D", self.delete_image,
+          "image_remove")
+        a("auto_label", "Auto-label with your YOLO model", "Y", self.auto_label, "scan")
+        a("prelabel_folder", "Pre-label the folder with YOLO…", "", self.prelabel_folder, "scan")
+        a("yolo_model", "YOLO model…", "", self.open_yolo_model, "scan")
         a("save", "Save", "Ctrl+S", self.save_current, "save")
         a("export", "Export YOLO / COCO…", "Ctrl+Shift+E", self.open_export, "export")
         a("next_image", "Next image", ("D", "PgDown"), self.next_image, "next")
@@ -194,40 +235,37 @@ class ShapesWindow(QMainWindow):
     # LAYOUT
     # ══════════════════════════════════════════════════════
     def _build_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(14, 12, 14, 10)
-        root.setSpacing(10)
-        root.addWidget(self._build_header())
-
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
-        self.splitter.setHandleWidth(8)
-        root.addWidget(self.splitter, 1)
-
-        column = QWidget()
-        column_layout = QVBoxLayout(column)
-        column_layout.setContentsMargins(0, 0, 0, 0)
-        column_layout.setSpacing(8)
+        """The image first: the tools in a pill rail on the left, the side panel
+        folding into a strip on the right, and the filmstrip folding under a
+        one-line bar that carries the folder."""
         frame = QFrame()
         frame.setObjectName("Card")
         frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(4, 4, 4, 4)
+        frame_layout.setContentsMargins(3, 3, 3, 3)
         self.canvas = ShapeCanvas()
         self.canvas.set_colour_provider(self.colour_for)
         frame_layout.addWidget(self.canvas)
-        column_layout.addWidget(frame, 1)
+        self.canvas_frame = frame
         self.filmstrip = FilmStrip()
         self.filmstrip.empty_text = "No folder open"
-        column_layout.addWidget(self.filmstrip)
-        self.splitter.addWidget(column)
+        self.folder_label = ElidedLabel(APP_TAGLINE)
+        self.folder_label.setObjectName("Subtitle")
 
-        self.side = self._build_side()
-        self.splitter.addWidget(self.side)
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
-        self.splitter.setSizes([1000, 350])
+        self.workspace = assemble(self, self._build_rail(), frame, self.filmstrip,
+                                  self._build_side(), self.settings,
+                                  info=((self.folder_label, 1),), side_width=350,
+                                  shortcut="Ctrl+Shift+L",
+                                  on_prev=self.act("prev_image").trigger,
+                                  on_next=self.act("next_image").trigger)
+        self.canvas.space_tap_handler = self._on_space_tap
+        self.splitter = self.workspace.splitter
+        self.side = self.workspace.side
+        # What stays within reach while the panel is folded away.
+        self.strip_buttons = {}
+        for action_id in ("save", "verify", "prev_image", "next_image"):
+            button = self._button_for(action_id)
+            self.strip_buttons[action_id] = button
+            self.side.add_strip_button(button)
 
         self._build_statusbar()
         self._wire()
@@ -253,46 +291,29 @@ class ShapesWindow(QMainWindow):
         button.clicked.connect(action.trigger)
         return button
 
-    def _build_header(self) -> QWidget:
-        header = QWidget()
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-        titles = QVBoxLayout()
-        titles.setSpacing(0)
-        title = QLabel(APP_NAME)
-        title.setObjectName("Title")
-        self.folder_label = QLabel(APP_TAGLINE)
-        self.folder_label.setObjectName("Subtitle")
-        titles.addWidget(title)
-        titles.addWidget(self.folder_label)
-        layout.addLayout(titles, 1)
-
-        self.tool_bar, tool_row = self._dock()
+    def _build_rail(self) -> ToolRail:
+        """Every button the header held, top to bottom in a pill: drawing
+        tools, then editing, then the windows."""
+        rail = ToolRail()
         self.tool_buttons = {}
         for tool, _text, _key, _icon in TOOLS:
             button = self._button_for("tool_" + tool, checkable=True)
             self.tool_buttons[tool] = button
-            tool_row.addWidget(button)
-        layout.addWidget(self.tool_bar)
-
-        self.edit_bar, edit_row = self._dock()
+            rail.add(button)
+        rail.add_separator()
         self.edit_buttons = {}
         for action_id in ("undo", "redo", "duplicate", "copy_shapes", "paste_shapes",
-                          "delete"):
+                          "delete", "delete_image"):
             button = self._button_for(action_id)
             self.edit_buttons[action_id] = button
-            edit_row.addWidget(button)
-        layout.addWidget(self.edit_bar)
-
-        self.window_bar, window_row = self._dock()
+            rail.add(button)
+        rail.add_separator()
         self.window_buttons = {}
         for action_id in ("class_manager", "export", "settings"):
             button = self._button_for(action_id)
             self.window_buttons[action_id] = button
-            window_row.addWidget(button)
-        layout.addWidget(self.window_bar)
-        return header
+            rail.add(button)
+        return rail
 
     def _build_side(self) -> QWidget:
         panel = QFrame()
@@ -381,6 +402,7 @@ class ShapesWindow(QMainWindow):
         canvas.shapeDrawn.connect(self._guard_arg(self.on_shape_drawn))
         canvas.aiPromptChanged.connect(self._guard(self.refresh_ai_preview))
         canvas.aiAccepted.connect(self._guard(self.accept_ai_preview))
+        canvas.proposalsAccepted.connect(self._guard(self.accept_proposals))
         canvas.editLabelRequested.connect(self._guard(self.edit_label))
         canvas.zoomChanged.connect(lambda pct: self.zoom_label.setText("%d%%" % round(pct)))
         canvas.cursorMoved.connect(lambda x, y: self.coord_label.setText("x %d  y %d" % (x, y)))
@@ -435,6 +457,9 @@ class ShapesWindow(QMainWindow):
         tools = bar.addMenu("&Tools")
         for tool, _text, _key, _icon in TOOLS:
             tools.addAction(self.act("tool_" + tool))
+        tools.addSeparator()
+        for action_id in ("auto_label", "prelabel_folder", "yolo_model"):
+            tools.addAction(self.act(action_id))
 
         view = bar.addMenu("&View")
         for group in (("zoom_in", "zoom_out", "zoom_fit", "zoom_selection"),
@@ -501,6 +526,10 @@ class ShapesWindow(QMainWindow):
             return False
         if isinstance(focus, TEXT_INPUTS):
             return False                     # typing in the class search stays typing
+        if event.key() == Qt.Key.Key_Space and not event.modifiers() and \
+                not event.isAutoRepeat() and self._space_verifies():
+            self._on_space_tap()             # a focused button would otherwise "click"
+            return True
         return self.canvas.handle_pending_key(event)
 
     # ══════════════════════════════════════════════════════
@@ -514,11 +543,13 @@ class ShapesWindow(QMainWindow):
         for widget in (self.canvas, self.filmstrip, self.stats_panel, self.palette,
                        self.active_chip, self.shape_panel):
             widget.set_theme(theme)
+        self.workspace.apply_theme(theme)
         for tool, button in self.tool_buttons.items():
             button.setIcon(icons.dual_icon(self.act("tool_" + tool).data(), theme["text"],
                                            theme["onAccent"], 19))
-        for action_id, button in list(self.edit_buttons.items()) + list(self.window_buttons.items()):
-            colour = theme["danger"] if action_id == "delete" else theme["text"]
+        for action_id, button in (list(self.edit_buttons.items()) + list(self.window_buttons.items())
+                                  + list(self.strip_buttons.items())):
+            colour = theme["danger"] if action_id in ("delete", "delete_image") else theme["text"]
             button.setIcon(icons.icon(self.act(action_id).data(), colour, 19))
         for action in self.actions_by_id.values():
             if action.data():
@@ -564,6 +595,7 @@ class ShapesWindow(QMainWindow):
         if dialog.exec() != Dialog.DialogCode.Accepted:
             return
         self.settings.update(dialog.result_values())
+        self._rebind_shortcuts()
         if self.host is not None:
             self.host.request_theme(self.settings.get("theme", "dark"))
         else:
@@ -790,6 +822,59 @@ class ShapesWindow(QMainWindow):
             self._status(message + ("  ·  " + note if note else ""), "warning" if note else "good")
         self.filmstrip.set_batch(folder, self.images, self._statuses())
         self._load_image(0)
+
+    def delete_image(self) -> None:
+        """Take the image on screen out of the folder: it and its shapes file
+        (and backup) move into deleted_images.  Nothing is erased."""
+        import shutil
+        from ..core.store import annotation_path, backup_path
+        rel = self.current_rel()
+        if rel is None or not self.folder:
+            self._status("No image open", "warning")
+            return
+        if self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return
+        answer = QMessageBox.question(
+            self, "Move image out of the folder",
+            "Move %s and its shapes file into deleted_images?\n\nNothing is erased; move "
+            "them back to restore them." % rel)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        target = os.path.join(self.folder, "deleted_images")
+
+        def free_name(name):
+            stem, ext = os.path.splitext(name)
+            candidate, counter = os.path.join(target, name), 2
+            while os.path.exists(candidate):
+                candidate = os.path.join(target, "%s_%d%s" % (stem, counter, ext))
+                counter += 1
+            return candidate
+
+        try:
+            os.makedirs(target, exist_ok=True)
+            shutil.move(os.path.join(self.folder, rel), free_name(os.path.basename(rel)))
+        except OSError as exc:
+            self._status("Could not move the image: %s" % exc, "danger")
+            return
+        left_behind = []
+        for extra in (annotation_path(self.folder, rel), backup_path(self.folder, rel)):
+            if os.path.isfile(extra):
+                try:
+                    shutil.move(extra, free_name(os.path.basename(extra)))
+                except OSError:
+                    left_behind.append(os.path.basename(extra))
+        self.images.pop(self.index)
+        self.summary.pop(rel, None)
+        self.saved = None
+        self.history.reset([])
+        self.filmstrip.set_batch(self.folder, self.images, self._statuses())
+        self._load_image(min(self.index, len(self.images) - 1))
+        if left_behind:
+            self._status("%s moved to deleted_images, but %s could not be moved"
+                         % (os.path.basename(rel), ", ".join(left_behind)), "warning")
+        else:
+            self._status("%s moved to deleted_images" % os.path.basename(rel), "good")
 
     def _summarise(self, rel) -> None:
         result = read_annotation(self.folder, rel)
@@ -1219,6 +1304,172 @@ class ShapesWindow(QMainWindow):
             canvas.clear_ai(quiet=True)
         self._status("AI polygon added as %s  ·  click the next object" % label, "good")
 
+    # ══════════════════════════════════════════════════════
+    # AUTO-LABEL (your own YOLO detector)
+    # ══════════════════════════════════════════════════════
+    def yolo(self):
+        if getattr(self, "_yolo", None) is None:
+            from annotex.ui.yolo_assist import YoloAssistant
+            self._yolo = YoloAssistant(self.settings, self)
+            self._yolo.detected.connect(self._guard_arg(self._on_yolo_detected))
+            self._yolo.failed.connect(lambda message: self._status(str(message).replace("\n", "  "),
+                                                                   "danger"))
+        return self._yolo
+
+    def open_yolo_model(self) -> None:
+        from annotex.ui.dialogs.yolo_dialog import YoloModelDialog
+        dialog = YoloModelDialog(self, self.yolo())
+        dialog.exec()
+        if dialog.changed:
+            path = self.yolo().model_path()
+            self._status("YOLO model: %s" % os.path.basename(path) if path else "No YOLO model",
+                         "good" if path else "info")
+
+    def _yolo_ready(self) -> bool:
+        assistant = self.yolo()
+        ok, why = assistant.usable()
+        if ok:
+            return True
+        self._status(str(why).replace("\n", "  "), "warning")
+        if not assistant.model_path():
+            answer = QMessageBox.question(self, "Auto-label", "%s\n\nChoose a YOLO model now?" % why)
+            if answer == QMessageBox.StandardButton.Yes:
+                self.open_yolo_model()
+                ok, _why = assistant.usable()
+        return ok
+
+    def auto_label(self) -> None:
+        rel = self.current_rel()
+        pixmap = self.canvas.pixmap
+        if rel is None or pixmap is None or not self.canvas.has_image():
+            self._status("Open an image first", "warning")
+            return
+        if self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return
+        if not self._yolo_ready():
+            return
+        self._yolo_rel = rel
+        if self.yolo().detect(rel, pixmap.toImage()):
+            self._status("Finding objects with %s…" % os.path.basename(self.yolo().model_path()), "info")
+
+    def _on_yolo_detected(self, found) -> None:
+        if self.current_rel() != getattr(self, "_yolo_rel", None):
+            return
+        if not found:
+            self._status("The model found nothing here above %.2f confidence"
+                         % self.yolo().confidence(), "warning")
+            return
+        project_names = [entry.name for entry in self.project().active_classes()]
+        mapping = self.yolo().resolve_classes(sorted({d.name for d in found}), project_names, self)
+        if mapping is None:
+            self._status("Auto-label cancelled", "info")
+            return
+        items = [{"label": mapping.get(d.name), "score": d.score, "box": (d.x0, d.y0, d.x1, d.y1)}
+                 for d in found if mapping.get(d.name)]
+        if not items:
+            self._status("Every class the model found is set to be ignored", "warning")
+            return
+        self.canvas.set_proposals(items)
+        self._status("%d proposal(s)  ·  click one to drop it  ·  Enter keeps the rest  ·  Esc drops "
+                     "them all" % len(items), "info")
+
+    @staticmethod
+    def _rectangle(label, box):
+        x0, y0, x1, y1 = box
+        return Shape.obb(label, (x0 + x1) / 2.0, (y0 + y1) / 2.0, x1 - x0, y1 - y0, 0.0)
+
+    def accept_proposals(self) -> None:
+        kept = self.canvas.kept_proposals()
+        self.canvas.clear_proposals()
+        if not kept:
+            self._status("Every proposal was dropped", "info")
+            return
+        self.ensure_classes({item["label"] for item in kept})
+        added = self.canvas.add_shapes([self._rectangle(item["label"], item["box"]) for item in kept],
+                                       "Auto-label")
+        self._status("%d rectangle(s) added  ·  Ctrl+Z takes them back" % added, "good")
+
+    def prelabel_folder(self) -> None:
+        if not self.folder:
+            self._status("Open a folder first", "warning")
+            return
+        if self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return
+        if not self._yolo_ready() or not self._commit_current():
+            return
+        from annotex.core.ai.yolo import YoloError, read_image_rgb
+        from ..core.store import annotation_path, write_annotation
+        assistant = self.yolo()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            detector = assistant.detector()
+            detector.load()
+        except YoloError as exc:
+            self._status(str(exc).replace("\n", "  "), "danger")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not detector.names:
+            QMessageBox.warning(self, "Pre-label the folder",
+                                "This model carries no class names, so its classes cannot be "
+                                "matched to yours.  Choose a names file in Tools → YOLO model….")
+            return
+        mapping = assistant.resolve_classes(detector.names,
+                                            [e.name for e in self.project().active_classes()], self)
+        if mapping is None:
+            return
+        wanted = {name for name in mapping.values() if name}
+        if not wanted:
+            self._status("Every class of the model is set to be ignored", "warning")
+            return
+        folder = self.folder
+        todo = [rel for rel in self.images if not os.path.isfile(annotation_path(folder, rel))]
+        if not todo:
+            self._status("Every image already has a shapes file", "info")
+            return
+        answer = QMessageBox.question(
+            self, "Pre-label the folder",
+            "Run %s over the %d image(s) that have no shapes file yet?\n\nImages that already have "
+            "one are never touched, and nothing is written where the model finds nothing."
+            % (os.path.basename(assistant.model_path()), len(todo)))
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.ensure_classes(wanted)
+
+        def write(rel, found, width, height):
+            shapes = [self._rectangle(label, (d.x0, d.y0, d.x1, d.y1)) for label, d in found]
+            return write_annotation(folder, rel, shapes, width, height)
+
+        job = assistant.prelabel_job("Pre-label %s" % os.path.basename(folder), todo, mapping,
+                                     lambda rel: os.path.isfile(annotation_path(folder, rel)),
+                                     lambda rel: read_image_rgb(os.path.join(folder, rel)), write)
+        job.tool = "shapes"
+        jobs = getattr(self.host, "jobs", None)
+        if jobs is None:
+            if getattr(self, "_jobs", None) is None:
+                from annotex.ui.jobs import JobManager
+                self._jobs = JobManager(self)
+            jobs = self._jobs
+        watched = job.id
+
+        def finished(done):
+            if done.id != watched or self.folder != folder:
+                return
+            for rel in todo:
+                self._summarise(rel)
+            self.filmstrip.set_statuses(self._statuses())
+            current = self.current_rel()
+            if current in todo and not self.canvas.shapes and self.history.can_undo is False:
+                self._load_image(self.index)            # show what was written for this image
+            self._update_stats()
+            self._status(done.message, "good" if done.state == "done" and not done.warnings else "warning")
+
+        jobs.jobFinished.connect(finished)
+        jobs.submit(job)
+        self._status("Pre-labelling %d image(s) in the background" % len(todo), "info")
+
     def open_ai_model(self) -> None:
         dialog = AiModelDialog(self, self.ai(), self.theme)
         dialog.exec()
@@ -1363,7 +1614,8 @@ class ShapesWindow(QMainWindow):
             self.act(action_id).setEnabled(has_image)
         self.act("undo").setEnabled(self.history.can_undo)
         self.act("redo").setEnabled(self.history.can_redo)
-        for action_id, button in list(self.edit_buttons.items()) + list(self.window_buttons.items()):
+        for action_id, button in (list(self.edit_buttons.items()) + list(self.window_buttons.items())
+                                  + list(self.strip_buttons.items())):
             button.setEnabled(self.act(action_id).isEnabled())
         for tool, button in self.tool_buttons.items():
             button.setEnabled(has_image and (tool in (T_SELECT, T_PAN) or not self.read_only))

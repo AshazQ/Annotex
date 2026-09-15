@@ -197,6 +197,7 @@ class FeatureCard(_Lift, QFrame):
         key = QLabel(shortcut)
         key.setObjectName("Kbd")
         key.setToolTip("Open %s from anywhere in %s" % (spec.name, SUITE_NAME))
+        key.setVisible(bool(shortcut))           # only the first nine tools have one
         top.addWidget(key, 0, Qt.AlignmentFlag.AlignTop)
         body.addLayout(top)
         tagline = QLabel(spec.tagline)
@@ -312,6 +313,7 @@ class TileCard(_Lift, QFrame):
         top.addWidget(name, 1)
         key = QLabel(shortcut)
         key.setObjectName("Kbd")
+        key.setVisible(bool(shortcut))           # only the first nine tools have one
         top.addWidget(key)
         texts.addLayout(top)
         tagline = QLabel(spec.tagline)
@@ -552,20 +554,6 @@ class HomePage(QWidget):
                 cards.append(card)
                 self.cards.append(card)
             self.sections.append((label, grid, cards))
-
-        self.ghost = QFrame()
-        self.ghost.setObjectName("GhostCard")
-        ghost_layout = QVBoxLayout(self.ghost)
-        ghost_layout.setContentsMargins(20, 16, 20, 16)
-        ghost_title = QLabel("More tools")
-        ghost_title.setObjectName("TileTitle")
-        ghost_text = QLabel("New tools appear here as they join %s." % SUITE_NAME)
-        ghost_text.setObjectName("Hint")
-        ghost_text.setWordWrap(True)
-        ghost_layout.addWidget(ghost_title)
-        ghost_layout.addWidget(ghost_text)
-        if self.sections:
-            self.sections[-1][2].append(self.ghost)
 
         footer = QLabel("Ctrl+Shift+H comes back here from any tool  ·  Ctrl+T switches light and "
                         "dark  ·  Ctrl+Q quits  ·  %s %s" % (SUITE_NAME, SUITE_VERSION))

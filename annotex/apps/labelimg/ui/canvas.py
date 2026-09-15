@@ -96,6 +96,7 @@ class BoxCanvas(ImageViewport):
         self.ai_points = []                  # [(x, y, positive)] in image px
         self.ai_box = None                   # (x0, y0, x1, y1) in image px
         self.ai_preview = None               # proposed Box, not yet accepted
+        self.proposals = []                  # auto-label: [{label, score, box, keep}]
         self.ai_busy = False
         self._ai_anchor = None
         self._ai_negative = False
@@ -141,6 +142,7 @@ class BoxCanvas(ImageViewport):
     def load_image(self, pixmap, boxes=None) -> None:
         self.boxes = [box.copy() for box in (boxes or [])]
         self.selection.clear()
+        self.proposals = []
         self.clear_ai(quiet=True)
         self._cancel_interaction()
         self.set_pixmap(pixmap)
@@ -344,6 +346,13 @@ class BoxCanvas(ImageViewport):
             self._drag_origin = pos
             self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
             return
+
+        if self.proposals and button == Qt.MouseButton.LeftButton:
+            hit = self._proposal_at(pos)
+            if hit >= 0:                       # a click drops a proposal, or brings it back
+                self.proposals[hit]["keep"] = not self.proposals[hit]["keep"]
+                self.update()
+                return
 
         if self.tool == T_AI:
             self._ai_press(pos, button, mods)
@@ -1057,8 +1066,61 @@ class BoxCanvas(ImageViewport):
         painter.setPen(QPen(qcolor(self._colours["label"])))
         painter.drawText(rect.bottomRight() + QPointF(8, 14), text)
 
+    # ── auto-label proposals ──────────────────────────────
+    def set_proposals(self, items) -> None:
+        """[{label, score, box: (x0, y0, x1, y1), keep}] from the YOLO model."""
+        self.proposals = [dict(item, keep=item.get("keep", True)) for item in (items or [])]
+        self.update()
+
+    def clear_proposals(self) -> None:
+        self.proposals = []
+        self.update()
+
+    def kept_proposals(self):
+        return [item for item in self.proposals if item["keep"]]
+
+    def _proposal_rect(self, item) -> QRectF:
+        x0, y0, x1, y1 = item["box"]
+        return QRectF(self.to_widget(x0, y0), self.to_widget(x1, y1)).normalized()
+
+    def _proposal_at(self, pos) -> int:
+        """The smallest proposal under the pointer, so a box inside another
+        can still be clicked."""
+        hits = [(self._proposal_rect(item).width() * self._proposal_rect(item).height(), index)
+                for index, item in enumerate(self.proposals) if self._proposal_rect(item).contains(pos)]
+        return min(hits)[1] if hits else -1
+
+    def _paint_proposals(self, painter) -> None:
+        if not self.proposals:
+            return
+        for item in self.proposals:
+            rect = self._proposal_rect(item)
+            # The drawing colour, not the class colour: a dark class colour
+            # disappears on a dark photo, and a proposal must be easy to see.
+            colour = qcolor(self._colours["drawing"])
+            if not item["keep"]:
+                colour.setAlpha(110)
+            pen = QPen(colour, self.line_width + (1 if item["keep"] else 0), Qt.PenStyle.DashLine)
+            pen.setCosmetic(True)
+            fill = QColor(colour)
+            fill.setAlpha(50 if item["keep"] else 0)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(fill))
+            painter.drawRect(rect)
+            if not item["keep"]:
+                painter.drawLine(rect.topLeft(), rect.bottomRight())
+            painter.setPen(QPen(qcolor(self._colours["label"])))
+            painter.drawText(rect.topLeft() + QPointF(3, -5), "%s  %.2f" % (item["label"], item["score"]))
+        kept = len(self.kept_proposals())
+        painter.setPen(QPen(qcolor(self._colours["label"])))
+        painter.drawText(self.rect().adjusted(12, 10, -12, 0),
+                         Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
+                         "%d of %d kept  ·  click a box to drop it  ·  Enter keeps  ·  Esc drops all"
+                         % (kept, len(self.proposals)))
+
     def _paint_ai(self, painter) -> None:
         """The prompt (clicks and a box) and the proposal it produced."""
+        self._paint_proposals(painter)
         if self.tool != T_AI and not self.has_ai_prompt():
             return
         if self.ai_box is not None:

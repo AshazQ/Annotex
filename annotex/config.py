@@ -142,7 +142,39 @@ SHELL_DEFAULTS = {
     "last_tool": "",
     "reopen_last_tool": False,
     "window_geometry": "",
+    "ui_scale": "auto",              # "auto" or a factor such as 0.9 - see interface_factor
+    "auto_scale": 1.0,               # what "auto" worked out on the last screen used
 }
+
+# Interface size.  Qt's own scale factor does the work, so text, buttons,
+# icons and panels all change together; it is applied as the app starts.
+INTERFACE_SIZES = (0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5)
+AUTO_FIT = (1280, 760)               # logical pixels the tools are comfortable in
+
+
+def interface_factor(settings) -> float:
+    """The scale factor the Interface size setting asks for (1.0 = none)."""
+    value = settings.get("ui_scale", "auto")
+    if value in (None, "", "auto"):
+        value = settings.get("auto_scale", 1.0)
+    try:
+        factor = float(value)
+    except (TypeError, ValueError):
+        factor = 1.0
+    return max(0.6, min(2.0, factor))
+
+
+def auto_factor(width, height) -> float:
+    """The largest size - in 5 % steps, never above 100 % - at which a screen
+    this big (in unscaled logical pixels) fits the tools without scrolling."""
+    try:
+        width, height = float(width), float(height)
+    except (TypeError, ValueError):
+        return 1.0
+    if width <= 0 or height <= 0:
+        return 1.0
+    fit = min(1.0, width / AUTO_FIT[0], height / AUTO_FIT[1])
+    return max(0.7, int(fit * 20 + 1e-6) / 20.0)
 
 
 class ShellSettings(JsonSettings):

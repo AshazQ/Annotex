@@ -38,6 +38,7 @@ TOOL_HUES = {
     "merge": "pink",
     "iconvert": "green",
     "sorter": "teal",
+    "dataset": "indigo",
 }
 
 
@@ -111,8 +112,11 @@ def _derive(t: dict) -> dict:
 
 def _theme(theme_id, label, kind, partner, hues, **colours) -> dict:
     t = dict(colours)
-    t.update(id=theme_id, label=label, kind=kind, name=kind, partner=partner,
-             hues=dict(zip(HUE_KEYS, hues)))
+    named = dict(zip(HUE_KEYS, hues))
+    # More tools than a theme names hues for: the extras are blended from the
+    # theme's own, so they sit right in every theme without being spelled out.
+    named.setdefault("indigo", mix(named["blue"], named["purple"], 0.55))
+    t.update(id=theme_id, label=label, kind=kind, name=kind, partner=partner, hues=named)
     return _derive(t)
 
 
@@ -442,6 +446,20 @@ QFrame#Card, QFrame#Panel {
 QFrame#Toolbar {
     background: %(surface)s; border: 1px solid %(border)s; border-radius: 12px;
 }
+/* the workspace's pill-shaped tool rails */
+QFrame#Rail {
+    background: %(surface)s; border: 1px solid %(border)s; border-radius: 25px;
+}
+QScrollArea#RailScroll, QWidget#RailBody { background: transparent; border: 0; }
+QFrame#RailSep { background: %(border)s; border: 0; }
+QFrame#Rail QPushButton#Tool { border-radius: 17px; padding: 0; }
+/* the round previous / next buttons over the image */
+QPushButton#NavRound {
+    background: %(surface)s; border: 1px solid %(borderStrong)s; border-radius: 19px; padding: 0;
+}
+QPushButton#NavRound:hover { background: %(accent)s; border-color: %(accent)s; }
+QPushButton#NavRound:pressed { background: %(accentPressed)s; }
+QWidget#DialogBody { background: transparent; }
 QFrame#Divider { background: %(border)s; max-height: 1px; border: 0; }
 QFrame#VDivider { background: %(border)s; max-width: 1px; border: 0; }
 
