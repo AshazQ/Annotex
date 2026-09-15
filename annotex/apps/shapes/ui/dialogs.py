@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QLabel, QMessageBox,
-                               QPushButton, QRadioButton, QSlider, QSpinBox)
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QLabel, QPushButton, QRadioButton, QSlider, QSpinBox)
 
 from annotex.ui.dialogs.common import Dialog, card, hint, row
 from annotex.ui.theme_picker import ThemeCombo
 
+from ....ui import design
+from ....ui.dialogs import messages
 from ..config import (CURVE_SEGMENTS, EXPORT_COCO, EXPORT_YOLO_OBB, EXPORT_YOLO_SEG,
                       TASK_COCO, TASK_OBB, TASK_SEGMENT)
 
@@ -42,7 +43,7 @@ class ExportDialog(Dialog):
             self.radios[task] = radio
             inner.addWidget(radio)
             note = hint(text)
-            note.setContentsMargins(26, 0, 0, 4)
+            design.margins(note, "0", "0", "xs", "xl")
             inner.addWidget(note)
         if not any(r.isChecked() for r in self.radios.values()):
             self.radios[TASK_SEGMENT].setChecked(True)
@@ -165,7 +166,7 @@ class ShapesSettingsDialog(Dialog):
         if window is not None and hasattr(window, "open_ai_model"):
             window.open_ai_model()
         else:                                         # pragma: no cover
-            QMessageBox.information(self, "AI model",
+            messages.inform(self, "AI model",
                                     "Open this from the tool's Settings button.")
         self._refresh_model_label()
 

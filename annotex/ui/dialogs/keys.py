@@ -5,10 +5,12 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView,
-                               QKeySequenceEdit, QMessageBox, QPushButton,
+                               QKeySequenceEdit, QPushButton,
                                QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget)
 
+from .. import design
+from . import messages
 from .. import shortcuts as sc
 from .common import Dialog, hint
 
@@ -23,7 +25,7 @@ class KeyBindingsEditor(QWidget):
         self.keys = sc.resolve(self.actions, overrides or {})
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(design.SPACE["s"])
         layout.addWidget(hint("Double-click a shortcut to change it. Clearing "
                               "one leaves that command available from the "
                               "menus and the command palette."))
@@ -87,19 +89,19 @@ class KeyBindingsEditor(QWidget):
     def assign(self, action_id, chosen, ask=False) -> bool:
         if chosen and chosen in self.reserved:
             if ask:
-                QMessageBox.information(self, "Reserved key",
+                messages.inform(self, "Reserved key",
                                         "%s is used by the canvas itself."
                                         % chosen)
             return False
         for other_id, key in self.keys.items():
             if other_id != action_id and key and key == chosen:
                 if ask:
-                    answer = QMessageBox.question(
+                    answer = messages.ask(
                         self, "Already used",
                         "%s is already bound to \"%s\".\n\nMove it to \"%s\"?"
                         % (chosen, sc.label(self.actions, other_id),
                            sc.label(self.actions, action_id)))
-                    if answer != QMessageBox.StandardButton.Yes:
+                    if not answer:
                         return False
                 self.keys[other_id] = ""
                 self._refresh_row(other_id)

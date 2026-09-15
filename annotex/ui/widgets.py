@@ -12,6 +12,8 @@ from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (QFrame, QGridLayout, QLabel, QPlainTextEdit,
                                QVBoxLayout, QWidget)
 
+from . import style
+from . import design
 from .palette import qcolor
 
 
@@ -57,7 +59,7 @@ class StatsPanel(QWidget):
         layout.addWidget(self.bar)
 
         grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
+        grid.setHorizontalSpacing(design.SPACE["s"])
         grid.setVerticalSpacing(4)
         self._labels = {}
         for column, (key, text, _value_key, _bar_key) in enumerate(self.fields):
@@ -93,8 +95,7 @@ class StatsPanel(QWidget):
         theme = self._theme or {}
         segments = []
         for key, _text, value_key, bar_key in self.fields:
-            colour = theme.get(value_key, "#c8cdd6")
-            self._labels[key].setStyleSheet("color: %s;" % colour)
+            style.set_tone(self._labels[key], value_key if value_key in style.TONES else "text")
             if bar_key:
                 segments.append((int(self._values.get(key) or 0),
                                  theme.get(bar_key, "#333a45")))
@@ -161,7 +162,7 @@ class CommentBox(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(design.SPACE["s"])
         layout.addWidget(section_label(title))
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("Saved with this image")
@@ -192,7 +193,7 @@ class MiniMap(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(104)
+        self.setFixedHeight(80)          # the class list gets the room instead
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._pixmap = None
         self._image_size = (0, 0)

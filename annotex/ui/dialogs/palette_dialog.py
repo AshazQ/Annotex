@@ -10,6 +10,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QLineEdit, QListWidget,
                                QListWidgetItem)
 
+from .. import design
 from .. import icons
 from .. import shortcuts as sc
 from .common import Dialog, hint
@@ -114,7 +115,7 @@ class ShortcutSheet(Dialog):
         self.list = QListWidget()
         self.list.setSelectionMode(
             QAbstractItemView.SelectionMode.NoSelection)
-        self.list.setSpacing(1)
+        self.list.setSpacing(design.SPACE["xxs"])
         self.body.addWidget(self.list, 1)
 
         groups = [(category, [(label, keys.get(action_id, ""), desc)
@@ -125,10 +126,7 @@ class ShortcutSheet(Dialog):
         for category, rows in groups:
             header = QListWidgetItem(category.upper())
             header.setFlags(Qt.ItemFlag.NoItemFlags)
-            font = header.font()
-            font.setBold(True)
-            font.setPointSizeF(max(8.0, font.pointSizeF() - 1))
-            header.setFont(font)
+            header.setFont(design.font("badge", header.font()))
             header.setSizeHint(QSize(0, 30))
             self.list.addItem(header)
             for label, key, desc in rows:

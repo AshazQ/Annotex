@@ -26,13 +26,13 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QKeySequence, QPainter
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QScrollArea,
                                QSizePolicy, QSplitter, QVBoxLayout, QWidget)
 
+from . import design
 from . import icons
 
-RAIL_WIDTH = 50
-RAIL_BUTTON = (36, 32)          # 17 buttons still fit a 768-pixel-high laptop screen
+from .design import NAV_BUTTON, RAIL_BUTTON, RAIL_WIDTH
 
 
 class ElidedLabel(QLabel):
@@ -92,8 +92,15 @@ class ToolRail(QFrame):
         holder.setObjectName("RailBody")
         self._layout = QVBoxLayout(holder)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(2)
+        # The circles sit directly under one another: at this size the gap
+        # would cost a button or two of height on a short laptop screen.
+        self._layout.setSpacing(0)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        # The scroll area resizes its body to the viewport, which would
+        # squash the buttons flat on a short screen.  Holding the body to the
+        # column's own minimum keeps every button square - so its hover and
+        # chosen states stay circles - and scrolls instead.
+        self._layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.scroll.setWidget(holder)
         outer.addWidget(self.scroll)
         self.buttons = []
@@ -113,6 +120,22 @@ class ToolRail(QFrame):
         self._layout.addSpacing(2)
         self._layout.addWidget(line, 0, Qt.AlignmentFlag.AlignHCenter)
         self._layout.addSpacing(2)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._whole_buttons()
+
+    def _whole_buttons(self) -> None:
+        """Show whole buttons only.  A rail too short for every tool scrolls,
+        and a half-cut circle at the bottom edge would look like a fault."""
+        step = RAIL_BUTTON[1]
+        room = self.height() - 16                     # the pill's own padding
+        body = self.scroll.widget()
+        wanted = body.sizeHint().height() if body is not None else 0
+        if room >= wanted:
+            self.scroll.setMaximumHeight(16777215)
+            return
+        self.scroll.setMaximumHeight(max(step, (room // step) * step))
 
     def sizeHint(self) -> QSize:
         body = self.scroll.widget()
@@ -237,7 +260,7 @@ class SidePanel(QWidget):
         self.fold_button.setToolTip("Fold the side panel away for a bigger image" + key)
         if self._theme is not None:
             self.toggle_button.setIcon(icons.icon("panel_open", self._theme["text"], 19))
-            self.toggle_button.setIconSize(QSize(19, 19))
+            self.toggle_button.setIconSize(QSize(design.ICON["m"], design.ICON["m"]))
             self.fold_button.setIcon(icons.icon("panel_close", self._theme["sub"], 16))
             self.fold_button.setIconSize(QSize(16, 16))
 
@@ -262,7 +285,7 @@ class FoldBar(QWidget):
         self.button.clicked.connect(self.toggle)
         layout.addWidget(self.button)
         self.info = QHBoxLayout()
-        self.info.setSpacing(10)
+        self.info.setSpacing(design.SPACE["s"])
         layout.addLayout(self.info, 1)
         self._sync()
 
@@ -301,7 +324,7 @@ class NavArrows(QObject):
     """Two round buttons floating at the right edge of the image - previous
     above, next below - for stepping through a folder with the mouse."""
 
-    SIZE = 38
+    SIZE = NAV_BUTTON
 
     def __init__(self, frame, on_prev, on_next):
         super().__init__(frame)
@@ -379,7 +402,7 @@ def assemble(window, rail, canvas_frame, filmstrip, side_widget, settings=None,
     central = QWidget()
     window.setCentralWidget(central)
     root = QHBoxLayout(central)
-    root.setContentsMargins(10, 8, 10, 4)
+    design.margins(root, "s", "s", "xs", "s")
     root.setSpacing(8)
 
     rail_column = QVBoxLayout()

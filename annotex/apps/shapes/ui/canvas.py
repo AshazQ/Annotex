@@ -14,12 +14,13 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics, QPainter,
+from PySide6.QtGui import (QBrush, QColor, QCursor, QFontMetrics, QPainter,
                            QPen, QPixmap, QPolygonF)
 
 from annotex.ui.palette import CANVAS, qcolor, readable_on
 from annotex.ui.viewport import ImageViewport, report_paint_fault
 
+from ....ui import design
 from ..config import (KIND_CIRCLE, KIND_FREEHAND, KIND_OBB, MAX_POINTS,
                       MAX_SHAPES_PER_IMAGE, MIN_POINTS, MIN_SIZE, POINT_KINDS)
 from ..core import geometry as geo
@@ -120,9 +121,7 @@ class ShapeCanvas(ImageViewport):
 
         self._colour_provider = None
         self._colours = dict(CANVAS)
-        self._label_font = QFont()
-        self._label_font.setPointSizeF(max(8.0, self._label_font.pointSizeF() - 0.5))
-        self._label_font.setBold(True)
+        self._label_font = design.font("label")
 
     # ══════════════════════════════════════════════════════
     # CONTENT

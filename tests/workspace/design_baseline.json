@@ -1,0 +1,26 @@
+{
+ "icon_size_off_set": {
+  "annotex/ui/theme_picker.py": 1
+ },
+ "raw_colour": {
+  "annotex/apps/images/convert.py": 1,
+  "annotex/apps/images/ui/convert_page.py": 2,
+  "annotex/apps/labelimg/ui/canvas.py": 4,
+  "annotex/apps/labelimg/ui/dialogs/review_dialog.py": 5,
+  "annotex/apps/labelimg/ui/dialogs/welcome_dialog.py": 4,
+  "annotex/apps/labelimg/ui/panels.py": 12,
+  "annotex/apps/roi/ui/dialogs/review_dialog.py": 3,
+  "annotex/apps/roi/ui/dialogs/settings_dialog.py": 2,
+  "annotex/apps/roi/ui/dialogs/welcome_dialog.py": 3,
+  "annotex/apps/roi/ui/main_window.py": 2,
+  "annotex/apps/roi/ui/panels.py": 4,
+  "annotex/apps/shapes/ui/canvas.py": 3,
+  "annotex/apps/shapes/ui/panels.py": 2,
+  "annotex/ui/dialogs/common.py": 1,
+  "annotex/ui/dialogs/palette_dialog.py": 1,
+  "annotex/ui/filmstrip.py": 13,
+  "annotex/ui/media_widgets.py": 8,
+  "annotex/ui/viewport.py": 3,
+  "annotex/ui/widgets.py": 9
+ }
+}

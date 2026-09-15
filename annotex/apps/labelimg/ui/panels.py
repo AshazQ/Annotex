@@ -4,7 +4,7 @@ the box list.  The minimap, counters and section furniture are the suite's."""
 from __future__ import annotations
 
 from PySide6.QtCore import QRect, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetrics, QIcon,
+from PySide6.QtGui import (QBrush, QColor, QFontMetrics, QIcon,
                            QPainter, QPixmap)
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLabel,
                                QLineEdit, QListWidget, QListWidgetItem,
@@ -14,6 +14,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLabel,
 from annotex.ui import icons
 from annotex.ui.palette import qcolor, readable_on
 from annotex.ui.widgets import section_label
+
+from ....ui import style
+from ....ui import design
+
 
 ROLE_NAME = Qt.ItemDataRole.UserRole + 1
 ROLE_COLOUR = Qt.ItemDataRole.UserRole + 2
@@ -78,9 +82,7 @@ class _ClassDelegate(QStyledItemDelegate):
         hotkey = index.data(ROLE_HOTKEY) or ""
         badge_width = 0
         if hotkey:
-            badge_font = QFont(option.font)
-            badge_font.setPointSizeF(max(7.0, option.font.pointSizeF() - 1.5))
-            badge_font.setBold(True)
+            badge_font = design.font("badge", option.font)
             badge_metrics = QFontMetrics(badge_font)
             badge_width = max(18, badge_metrics.horizontalAdvance(hotkey) + 12)
             badge = QRectF(rect.right() - badge_width - 6,
@@ -145,7 +147,7 @@ class ClassPalette(QWidget):
         self.list = QListWidget()
         self.list.setMouseTracking(True)
         self.list.setUniformItemSizes(True)
-        self.list.setMinimumHeight(104)
+        self.list.setMinimumHeight(160)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.delegate = _ClassDelegate(self.list)
         self.list.setItemDelegate(self.delegate)
@@ -259,14 +261,13 @@ class ActiveClassChip(QWidget):
     def set_class(self, name, colour="", hotkey="") -> None:
         if not name:
             self.chip.setText("no active class - you will be asked")
-            self.chip.setStyleSheet("color: %s;" % self._theme.get("sub", "#8b93a1"))
+            style.clear_swatch(self.chip)
+            style.set_tone(self.chip, "sub")
             self.key.setVisible(False)
             return
         fg = readable_on(colour or "#888888")
         self.chip.setText(name)
-        self.chip.setStyleSheet(
-            "background: %s; color: %s; border-radius: 6px; padding: 3px 9px; "
-            "font-weight: 600;" % (colour or "#888888", fg))
+        style.swatch(self.chip, colour or "#888888", fg)
         self.key.setText(hotkey)
         self.key.setVisible(bool(hotkey))
 
@@ -304,7 +305,7 @@ class BoxListPanel(QWidget):
         self.list = QListWidget()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.setUniformItemSizes(True)
-        self.list.setMinimumHeight(92)
+        self.list.setMinimumHeight(64)
         self.list.itemSelectionChanged.connect(self._emit_selection)
         self.list.itemDoubleClicked.connect(lambda _i: self.editRequested.emit())
         layout.addWidget(self.list, 1)
@@ -322,7 +323,7 @@ class BoxListPanel(QWidget):
             button = QToolButton()
             button.setObjectName("Tool")
             button.setToolTip(tip)
-            button.setIconSize(QSize(17, 17))
+            button.setIconSize(QSize(design.ICON["s"], design.ICON["s"]))
             button.setProperty("iconName", icon_name)
             self.buttons[name] = button
             row.addWidget(button)

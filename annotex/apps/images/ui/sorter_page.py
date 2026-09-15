@@ -19,6 +19,7 @@ from annotex.ui.media_page import MediaToolPage
 from annotex.ui.media_widgets import FitLabel, FrameView
 from annotex.ui.widgets import section_label
 
+from ....ui import design
 from .. import ai, sorter
 from ..common import scan_images
 
@@ -184,7 +185,7 @@ class SorterPage(MediaToolPage):
     def _manual_tab(self) -> QWidget:
         page = QWidget()
         layout = QHBoxLayout(page)
-        layout.setContentsMargins(0, 10, 0, 0)
+        design.margins(layout, "s", "0", "0", "0")
         viewer = QVBoxLayout()
         self.view = FrameView()
         self.view.message = "Choose a folder to start"
@@ -325,7 +326,7 @@ class SorterPage(MediaToolPage):
     def _rules_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 10, 0, 0)
+        design.margins(layout, "s", "0", "0", "0")
         self.rule = QComboBox()
         for key, label in sorter.RULES.items():
             self.rule.addItem(label, key)
@@ -428,7 +429,7 @@ class SorterPage(MediaToolPage):
     def _ai_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 10, 0, 0)
+        design.margins(layout, "s", "0", "0", "0")
         self.ai_missing = hint(ai.INSTALL_HINT)
         layout.addWidget(self.ai_missing)
 

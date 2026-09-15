@@ -12,10 +12,11 @@ import os
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QFrame, QSizePolicy, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-                               QPushButton, QScrollArea, QSplitter, QStatusBar,
+from PySide6.QtWidgets import (QFrame, QSizePolicy, QHBoxLayout, QLabel, QMainWindow, QPushButton, QScrollArea, QSplitter, QStatusBar,
                                QVBoxLayout, QWidget)
 
+from . import design
+from .dialogs import messages
 from ..config import JsonSettings, first_writable, user_data_dir
 from . import icons
 from .jobs import JobManager, JobQueuePanel
@@ -55,11 +56,11 @@ class MediaToolPage(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(14, 12, 14, 10)
-        root.setSpacing(10)
+        design.margins(root, "m", "m", "s", "m")
+        root.setSpacing(design.SPACE["s"])
 
         header = QHBoxLayout()
-        header.setSpacing(10)
+        header.setSpacing(design.SPACE["s"])
         titles = QVBoxLayout()
         titles.setSpacing(0)
         title = QLabel(self.TOOL_NAME)
@@ -74,8 +75,8 @@ class MediaToolPage(QMainWindow):
         self.dock = QFrame()
         self.dock.setObjectName("Toolbar")
         self.dock_layout = QHBoxLayout(self.dock)
-        self.dock_layout.setContentsMargins(6, 5, 6, 5)
-        self.dock_layout.setSpacing(3)
+        design.margins(self.dock_layout, "xs", "s")
+        self.dock_layout.setSpacing(design.SPACE["xs"])
         header.addWidget(self.dock)
         root.addLayout(header)
 
@@ -91,7 +92,7 @@ class MediaToolPage(QMainWindow):
         queue_card = QFrame()
         queue_card.setObjectName("Card")
         queue_layout = QVBoxLayout(queue_card)
-        queue_layout.setContentsMargins(14, 10, 14, 10)
+        design.margins(queue_layout, "s", "m")
         self.queue = JobQueuePanel(self.jobs, self.TOOL_ID)
         queue_layout.addWidget(self.queue)
         self.vertical.addWidget(queue_card)
@@ -144,8 +145,8 @@ class MediaToolPage(QMainWindow):
         frame = QFrame()
         frame.setObjectName("Card")
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(10)
+        design.margins(layout, "m")
+        layout.setSpacing(design.SPACE["s"])
         return frame, layout
 
     def scroll_card(self) -> tuple:
@@ -159,7 +160,7 @@ class MediaToolPage(QMainWindow):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         holder = QWidget()
         layout = QVBoxLayout(holder)
-        layout.setContentsMargins(14, 12, 14, 12)
+        design.margins(layout, "m")
         layout.setSpacing(12)
         scroll.setWidget(holder)
         outer.addWidget(scroll)
@@ -169,7 +170,7 @@ class MediaToolPage(QMainWindow):
         button = QPushButton()
         button.setObjectName("Tool")
         button.setFixedSize(34, 32)
-        button.setIconSize(QSize(19, 19))
+        button.setIconSize(QSize(design.ICON["m"], design.ICON["m"]))
         button.setToolTip(tip)
         button.clicked.connect(slot)
         self.dock_layout.addWidget(button)
@@ -191,7 +192,7 @@ class MediaToolPage(QMainWindow):
         self.status_label.style().polish(self.status_label)
 
     def ask(self, title, text) -> bool:
-        return QMessageBox.question(self, title, text) == QMessageBox.StandardButton.Yes
+        return messages.ask(self, title, text)
 
     # ── menus & theme ─────────────────────────────────────
     def _build_menus(self) -> None:

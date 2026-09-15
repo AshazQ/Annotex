@@ -7,10 +7,12 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox,
                                QHBoxLayout, QHeaderView, QKeySequenceEdit,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMessageBox, QPushButton, QSlider, QSpinBox,
+                               QPushButton, QSlider, QSpinBox,
                                QTabWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
+from .....ui import design
+from .....ui.dialogs import messages
 from ...config import CANON_COLUMNS
 from .. import shortcuts as sc
 from .common import ColourButton, Dialog, card, hint, row
@@ -248,7 +250,7 @@ class SettingsDialog(Dialog):
     def _keys_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setSpacing(10)
+        layout.setSpacing(design.SPACE["s"])
         layout.addWidget(hint("Double-click a shortcut to change it. Clearing "
                               "one leaves that command available from the "
                               "menus and the command palette."))
@@ -309,16 +311,16 @@ class SettingsDialog(Dialog):
             return
         chosen = dialog.value()
         if chosen and chosen in sc.RESERVED:
-            QMessageBox.information(self, "Reserved key",
+            messages.inform(self, "Reserved key",
                                     "%s is used by the canvas itself." % chosen)
             return
         for other_id, key in self.keys.items():
             if other_id != action_id and key and key == chosen:
-                answer = QMessageBox.question(
+                answer = messages.ask(
                     self, "Already used",
                     "%s is already bound to \"%s\".\n\nMove it to \"%s\"?"
                     % (chosen, sc.label(other_id), sc.label(action_id)))
-                if answer != QMessageBox.StandardButton.Yes:
+                if not answer:
                     return
                 self.keys[other_id] = ""
                 self._refresh_key_row(other_id)
@@ -349,10 +351,10 @@ class SettingsDialog(Dialog):
 
     # ══════════════════════════════════════════════════════
     def _restore(self) -> None:
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Restore defaults",
             "Reset every setting on every tab to its default?")
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         from ...config import DEFAULT_SETTINGS
         keep = {"recent_folders": self.settings.get("recent_folders", []),

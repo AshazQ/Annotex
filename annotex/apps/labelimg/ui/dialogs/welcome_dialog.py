@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QCheckBox, QLabel, QStackedWidget, QVBoxLayout, QW
 from annotex.ui import icons
 from annotex.ui.dialogs.common import Dialog, card, hint, row
 
+from .....ui import design
 from ...config import APP_NAME, APP_TAGLINE, APP_VERSION, BACKUP_DIR
 
 PAGES = [
@@ -65,7 +66,7 @@ class WelcomeDialog(Dialog):
     def _page(self, icon_name, title, text) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setSpacing(14)
+        layout.setSpacing(design.SPACE["m"])
         badge = QLabel()
         badge.setPixmap(icons.pixmap(icon_name, self._theme.get("accent", "#df5e3b"),
                                      44, 1.6, 2.0))

@@ -25,7 +25,8 @@ OUT = os.environ.get("ANNOTEX_SHOT_DIR", "")
 
 from PySide6.QtCore import QEvent, QPointF, Qt                      # noqa: E402
 from PySide6.QtGui import QColor, QMouseEvent, QPixmap              # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox             # noqa: E402
+from PySide6.QtWidgets import QApplication             # noqa: E402
+from annotex.ui.dialogs import messages  # noqa: E402
 
 from annotex.apps.labelimg.core.class_store import ClassStore       # noqa: E402
 from annotex.apps.shapes.config import (EXPORT_COCO, EXPORT_YOLO_OBB,  # noqa: E402
@@ -50,7 +51,7 @@ def ok(label, condition):
 
 app = QApplication(sys.argv[:1])
 app.setStyle("Fusion")
-QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+messages.ask = lambda *a, **k: True
 answers = []
 window_module.LabelDialog.ask = classmethod(lambda cls, *a, **k: answers.pop(0) if answers else None)
 

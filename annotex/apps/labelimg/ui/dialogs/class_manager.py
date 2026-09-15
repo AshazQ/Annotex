@@ -15,12 +15,14 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog,
                                QComboBox, QFileDialog, QGridLayout,
                                QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-                               QLineEdit, QMessageBox, QPlainTextEdit,
+                               QLineEdit, QPlainTextEdit,
                                QPushButton, QRadioButton, QSpinBox,
                                QTableWidget, QTableWidgetItem)
 
 from annotex.ui.dialogs.common import Dialog, card, hint
 
+from .....ui import design
+from .....ui.dialogs import messages
 from ...core.class_store import (ClassStoreError, find_class_usage,
                                  validate_class_id, validate_class_name)
 
@@ -101,7 +103,7 @@ class ClassManagerDialog(Dialog):
     # ── construction ──────────────────────────────────────
     def _build(self) -> None:
         top = QHBoxLayout()
-        top.setSpacing(6)
+        top.setSpacing(design.SPACE["s"])
         top.addWidget(QLabel("Project"))
         self.project_combo = QComboBox()
         self.project_combo.setMinimumWidth(180)
@@ -150,7 +152,7 @@ class ClassManagerDialog(Dialog):
         self.body.addWidget(self.table, 1)
 
         actions = QHBoxLayout()
-        actions.setSpacing(6)
+        actions.setSpacing(design.SPACE["s"])
         self.rename_button = QPushButton("Rename…")
         self.rename_button.clicked.connect(self._rename_class)
         self.colour_button = QPushButton("Colour…")
@@ -266,12 +268,12 @@ class ClassManagerDialog(Dialog):
         name = self.project_combo.currentText()
         if not name:
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Delete project",
             "Delete the project \"%s\" and its %d class definitions?\n\n"
             "Saved annotations are not touched."
             % (name, len(self.store.ensure_project(name))))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         try:
             self.store.delete_project(name)
@@ -458,12 +460,12 @@ class ClassManagerDialog(Dialog):
             self.changed = True
             self._refresh_table()
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Delete class",
             "Delete \"%s\" (ID %d)?\n\nNo saved annotation in the scanned folders "
             "references it. ID %d will not be reused for a different class."
             % (entry.name, entry.id, entry.id))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         project.remove_class(entry.id)
         self.changed = True
@@ -483,7 +485,7 @@ class ClassManagerDialog(Dialog):
             return
         self.changed = True
         self._reload_projects(project.name)
-        QMessageBox.information(
+        messages.inform(
             self, "Imported",
             "Imported %d classes into project \"%s\".\n\nIDs were assigned in "
             "file order (0, 1, 2 …), which matches the indices YOLO already "
@@ -523,7 +525,7 @@ class ClassManagerDialog(Dialog):
         except Exception as exc:
             self._warn("Could not export: %s" % exc)
             return
-        QMessageBox.information(self, "Exported", "Saved to:\n%s" % path)
+        messages.inform(self, "Exported", "Saved to:\n%s" % path)
 
     def _save_and_close(self) -> None:
         try:
@@ -534,4 +536,4 @@ class ClassManagerDialog(Dialog):
         self.accept()
 
     def _warn(self, message) -> None:
-        QMessageBox.warning(self, "Class Manager", message)
+        messages.warn(self, "Class Manager", message)

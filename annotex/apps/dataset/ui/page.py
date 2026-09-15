@@ -33,6 +33,7 @@ from annotex.ui.media_page import MediaToolPage
 from annotex.ui.widgets import section_label
 from annotex.ui.workspace import ElidedLabel
 
+from ....ui import design
 from .. import ops
 
 ICONS = {"empty_labels": "trash", "unpaired": "pair", "rename_pairs": "rename",
@@ -87,7 +88,7 @@ class DatasetPage(MediaToolPage):
         left_layout.addWidget(choose)
         left_layout.addWidget(section_label("Tools"))
         self.op_list = QListWidget()
-        self.op_list.setIconSize(QSize(18, 18))
+        self.op_list.setIconSize(QSize(design.ICON["s"], design.ICON["s"]))
         for key, title, _text in ops.OPERATIONS:
             item = QListWidgetItem(title)
             item.setData(Qt.ItemDataRole.UserRole, key)

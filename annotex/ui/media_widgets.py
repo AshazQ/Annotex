@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxL
                                QLabel, QListWidget, QListWidgetItem, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget)
 
+from . import design
 from ..core.media.ffmpeg import format_time
 from . import icons
 from .palette import qcolor
@@ -95,7 +96,7 @@ class FileList(QWidget):
         layout.addWidget(self.hint)
 
         buttons = QHBoxLayout()
-        buttons.setSpacing(6)
+        buttons.setSpacing(design.SPACE["s"])
         self.add_files_button = QPushButton("Add files…")
         self.add_files_button.clicked.connect(self.browse_files)
         self.add_folder_button = QPushButton("Add folder…")
@@ -234,7 +235,7 @@ class OutputChooser(QWidget):
         self._folder = ""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(design.SPACE["s"])
         row = QHBoxLayout()
         row.addWidget(QLabel("Save to"))
         self.combo = QComboBox()
@@ -502,7 +503,7 @@ class VideoPlayer(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(design.SPACE["s"])
         self.view = FrameView()
         layout.addWidget(self.view, 1)
         self.timeline = Timeline()

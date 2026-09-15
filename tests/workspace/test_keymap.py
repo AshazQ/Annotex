@@ -105,8 +105,10 @@ def main():
     window._rebind_shortcuts()
     ok("Shapes: a changed key takes effect", keys_of("next_image") == ["K", "PgDown"])
     ok("Shapes: and is kept in its settings", settings.get("shortcuts") == {"next_image": "K"})
-    ok("Shapes: the rail's tooltip shows it", "[K]" not in window.tool_buttons["select"].toolTip()
-       and window.strip_buttons["next_image"].toolTip().endswith("[K]"))
+    # Stepping through images lives on the arrows over the image, so the key
+    # shows up on the action itself; the rail's own buttons carry their keys.
+    ok("Shapes: the rail's tooltips show the keys", "[K]" not in window.tool_buttons["select"].toolTip()
+       and ("[%s]" % keys_of("save")[0]) in window.strip_buttons["save"].toolTip())
 
     # tapping Space marks verified; holding it to pan does not
     from PySide6.QtCore import QEvent, Qt
@@ -145,8 +147,8 @@ def main():
     ok("the previous arrow moves back", window.index == 0)
 
     # moving an image out of the folder
-    from PySide6.QtWidgets import QMessageBox
-    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+    from annotex.ui.dialogs import messages
+    messages.ask = lambda *a, **k: True
     ok("the rail has a button for it", "delete_image" in window.edit_buttons)
     window.delete_image()
     app.processEvents()
@@ -163,8 +165,8 @@ def main():
     from annotex.apps.roi.config import Settings as RoiSettings
     from annotex.apps.roi.ui.main_window import MainWindow as RoiWindow
     QDialog.exec = lambda self: 0
-    QMessageBox.information = staticmethod(lambda *a, **k: None)
-    QMessageBox.warning = staticmethod(lambda *a, **k: None)
+    messages.inform = lambda *a, **k: None
+    messages.warn = lambda *a, **k: None
     tools = (("ROI Studio", lambda: RoiWindow(RoiSettings(os.path.join(SANDBOX, "roi.json")), app)),
              ("LabelImg Master", lambda: LabelImgWindow(BoxSettings(os.path.join(SANDBOX, "box.json")), app)))
     for name, build in tools:

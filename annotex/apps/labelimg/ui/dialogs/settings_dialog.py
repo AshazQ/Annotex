@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QLabel, QMessageBox,
-                               QPushButton, QSlider, QSpinBox, QTabWidget,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QLabel, QPushButton, QSlider, QSpinBox, QTabWidget,
                                QVBoxLayout, QWidget)
 
 from annotex.ui.dialogs.common import Dialog, card, hint, row
 from annotex.ui.theme_picker import ThemeCombo
 from annotex.ui.dialogs.keys import KeyBindingsEditor
 
+from .....ui.dialogs import messages
 from ...config import DEFAULT_SETTINGS, FORMAT_LABELS, FORMATS
 from .. import shortcuts as sc
 
@@ -173,14 +173,14 @@ class SettingsDialog(Dialog):
         if window is not None and hasattr(window, "open_ai_model"):
             window.open_ai_model()
         else:                                         # pragma: no cover
-            QMessageBox.information(self, "AI model",
+            messages.inform(self, "AI model",
                                     "Open this from the tool's Settings button.")
         self._refresh_model_label()
 
     def _restore(self) -> None:
-        answer = QMessageBox.question(self, "Restore defaults",
+        answer = messages.ask(self, "Restore defaults",
                                       "Reset every setting on every tab to its default?")
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         self._result = dict(DEFAULT_SETTINGS)
         # The chosen AI model is not a preference to throw away with the rest.

@@ -23,7 +23,8 @@ for sub in ("roi_studio", os.path.join("annotex", "labelimg")):
 OUT = os.environ.get("ANNOTEX_SHOT_DIR", "")
 
 from PySide6.QtGui import QColor, QPixmap                            # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox              # noqa: E402
+from PySide6.QtWidgets import QApplication              # noqa: E402
+from annotex.ui.dialogs import messages  # noqa: E402
 
 from annotex.apps.labelimg.core.model import Box                     # noqa: E402
 from annotex.apps.labelimg.ui.window import LabelImgWindow           # noqa: E402
@@ -42,7 +43,7 @@ def ok(label, condition):
 
 app = QApplication(sys.argv[:1])
 app.setStyle("Fusion")
-QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+messages.ask = lambda *a, **k: True
 
 folder = os.path.join(SANDBOX, "frames")
 os.makedirs(folder)
@@ -88,6 +89,16 @@ try:
     ok("leaving LabelImg saved its work", os.path.isfile(os.path.join(folder, "A_cam1_1.xml")))
     ok("the hidden tool is not visible", not page.isVisible() and roi.isVisible())
     ok("the same tool object is kept", shell.open_tool("labelimg") is page)
+
+    # ── closing one tool from its tab ─────────────────────
+    shell.open_tool("dataset")
+    ok("a tool tab carries a close button", shell.tab_closers["dataset"].isVisible())
+    shell.tab_closers["dataset"].click()
+    app.processEvents()
+    ok("closing a tool drops its page", "dataset" not in shell.pages)
+    ok("its tab goes with it", not shell.tab_holders["dataset"].isVisible())
+    ok("another open tool takes over", shell.stack.currentWidget() in shell.pages.values())
+    ok("closing a tool that is not open is harmless", shell.close_tool("dataset"))
     shell.open_tool("roi")
 
     shell.request_theme("light")

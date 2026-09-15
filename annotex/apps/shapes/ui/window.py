@@ -16,7 +16,7 @@ from PySide6.QtGui import (QAction, QActionGroup, QDesktopServices, QImageReader
                            QKeySequence, QPixmap)
 from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QFileDialog,
                                QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QLineEdit,
-                               QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
+                               QMainWindow, QPlainTextEdit, QPushButton,
                                QScrollArea, QSplitter, QStatusBar, QTextEdit, QVBoxLayout,
                                QWidget)
 
@@ -37,6 +37,8 @@ from annotex.ui.theme_picker import theme_menu
 from annotex.ui.widgets import StatsPanel, divider
 from annotex.ui.workspace import ElidedLabel, ToolRail, assemble
 from annotex.ui import keymap
+from ....ui import design
+from ....ui.dialogs import messages
 from . import shortcuts as shape_keys
 
 from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, CURVE_SEGMENTS, HOTKEY_DIGITS,
@@ -241,7 +243,7 @@ class ShapesWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("Card")
         frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(3, 3, 3, 3)
+        design.margins(frame_layout, "xs")
         self.canvas = ShapeCanvas()
         self.canvas.set_colour_provider(self.colour_for)
         frame_layout.addWidget(self.canvas)
@@ -262,7 +264,7 @@ class ShapesWindow(QMainWindow):
         self.side = self.workspace.side
         # What stays within reach while the panel is folded away.
         self.strip_buttons = {}
-        for action_id in ("save", "verify", "prev_image", "next_image"):
+        for action_id in ("save", "verify"):
             button = self._button_for(action_id)
             self.strip_buttons[action_id] = button
             self.side.add_strip_button(button)
@@ -274,8 +276,8 @@ class ShapesWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("Toolbar")
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(6, 5, 6, 5)
-        layout.setSpacing(3)
+        design.margins(layout, "xs", "s")
+        layout.setSpacing(design.SPACE["xs"])
         return frame, layout
 
     def _button_for(self, action_id, checkable=False) -> QPushButton:
@@ -284,7 +286,7 @@ class ShapesWindow(QMainWindow):
         button.setObjectName("Tool")
         button.setCheckable(checkable)
         button.setFixedSize(34, 32)
-        button.setIconSize(QSize(19, 19))
+        button.setIconSize(QSize(design.ICON["l"], design.ICON["l"]))
         keys = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
         tip = action.toolTip() or action.text()
         button.setToolTip("%s%s" % (tip, ("   [%s]" % keys) if keys else ""))
@@ -325,21 +327,21 @@ class ShapesWindow(QMainWindow):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         holder = QWidget()
         layout = QVBoxLayout(holder)
-        layout.setContentsMargins(14, 14, 14, 6)
+        design.margins(layout, "m", "m", "s", "m")
         layout.setSpacing(12)
         self.active_chip = ActiveClassChip()
         self.active_chip.caption.setText("Next shape")
         layout.addWidget(self.active_chip)
         self.palette = ClassPalette()
-        layout.addWidget(self.palette, 3)
+        layout.addWidget(self.palette, 5)
         self.shape_panel = ShapeListPanel()
-        layout.addWidget(self.shape_panel, 2)
+        layout.addWidget(self.shape_panel, 1)
         scroll.setWidget(holder)
 
         footer = QWidget()
         foot = QVBoxLayout(footer)
-        foot.setContentsMargins(14, 6, 14, 14)
-        foot.setSpacing(10)
+        design.margins(foot, "s", "m", "m", "m")
+        foot.setSpacing(design.SPACE["s"])
         foot.addWidget(divider())
         self.stats_panel = StatsPanel(fields=(
             ("total", "Images", "title", None),
@@ -354,7 +356,7 @@ class ShapesWindow(QMainWindow):
         self.save_button.clicked.connect(self.act("save").trigger)
         foot.addWidget(self.save_button)
         buttons = QHBoxLayout()
-        buttons.setSpacing(6)
+        buttons.setSpacing(design.SPACE["s"])
         self.prev_button = QPushButton("Previous")
         self.prev_button.setToolTip("Previous image  [A]")
         self.prev_button.clicked.connect(self.act("prev_image").trigger)
@@ -379,7 +381,7 @@ class ShapesWindow(QMainWindow):
     def _build_statusbar(self) -> None:
         bar = QStatusBar()
         bar.setSizeGripEnabled(False)
-        bar.setContentsMargins(6, 0, 12, 0)   # the last chip is not clipped
+        design.margins(bar, "0", "m", "0", "s")   # the last chip is not clipped
         self.setStatusBar(bar)
         self.status_label = QLabel("")
         self.status_label.setObjectName("Hint")
@@ -776,20 +778,20 @@ class ShapesWindow(QMainWindow):
             return
         writable, why = folder_is_writable(folder)
         if not writable:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Read-only folder",
                 "This folder cannot be written to:\n%s\n\nOpen it read-only?" % why)
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
         note = ""
         if writable:
             acquired, message = self.lock.acquire(folder)
             if not acquired:
-                answer = QMessageBox.question(
+                answer = messages.ask(
                     self, "Folder in use",
                     "%s\n\nTwo sessions saving the same shapes can overwrite each other's "
                     "work.\nOpen it anyway?" % message)
-                if answer != QMessageBox.StandardButton.Yes:
+                if not answer:
                     return
                 self.lock.acquire(folder, force=True)
                 note = "lock overridden - close the other session"
@@ -835,11 +837,11 @@ class ShapesWindow(QMainWindow):
         if self.read_only:
             self._status("This folder is open read-only", "warning")
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Move image out of the folder",
             "Move %s and its shapes file into deleted_images?\n\nNothing is erased; move "
             "them back to restore them." % rel)
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         target = os.path.join(self.folder, "deleted_images")
 
@@ -1047,10 +1049,10 @@ class ShapesWindow(QMainWindow):
     def clear_all(self) -> None:
         if not self.canvas.shapes:
             return
-        answer = QMessageBox.question(self, "Clear all shapes",
+        answer = messages.ask(self, "Clear all shapes",
                                       "Remove all %d shapes from this image?\n\nCtrl+Z brings "
                                       "them back." % len(self.canvas.shapes))
-        if answer == QMessageBox.StandardButton.Yes:
+        if answer:
             self._status("%d shape(s) cleared" % self.canvas.clear_all(), "good")
 
     # ══════════════════════════════════════════════════════
@@ -1228,12 +1230,10 @@ class ShapesWindow(QMainWindow):
             # so pressing the key again is not a dialog every time.
             if not self._ai_offered:
                 self._ai_offered = True
-                answer = QMessageBox.question(
+                answer = messages.ask(
                     self, "AI select",
-                    "%s\n\nDownload or choose a model now?" % why,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.Yes)
-                if answer == QMessageBox.StandardButton.Yes:
+                    "%s\n\nDownload or choose a model now?" % why)
+                if answer:
                     self.open_ai_model()
                     ok, _why = assistant.usable()
             if not ok:
@@ -1332,8 +1332,8 @@ class ShapesWindow(QMainWindow):
             return True
         self._status(str(why).replace("\n", "  "), "warning")
         if not assistant.model_path():
-            answer = QMessageBox.question(self, "Auto-label", "%s\n\nChoose a YOLO model now?" % why)
-            if answer == QMessageBox.StandardButton.Yes:
+            answer = messages.ask(self, "Auto-label", "%s\n\nChoose a YOLO model now?" % why)
+            if answer:
                 self.open_yolo_model()
                 ok, _why = assistant.usable()
         return ok
@@ -1412,7 +1412,7 @@ class ShapesWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         if not detector.names:
-            QMessageBox.warning(self, "Pre-label the folder",
+            messages.warn(self, "Pre-label the folder",
                                 "This model carries no class names, so its classes cannot be "
                                 "matched to yours.  Choose a names file in Tools → YOLO model….")
             return
@@ -1429,12 +1429,12 @@ class ShapesWindow(QMainWindow):
         if not todo:
             self._status("Every image already has a shapes file", "info")
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Pre-label the folder",
             "Run %s over the %d image(s) that have no shapes file yet?\n\nImages that already have "
             "one are never touched, and nothing is written where the model finds nothing."
             % (os.path.basename(assistant.model_path()), len(todo)))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         self.ensure_classes(wanted)
 
@@ -1553,15 +1553,11 @@ class ShapesWindow(QMainWindow):
         self.settings.update(values)
         report = self.export_with(values["export_task"], values["curve_segments"],
                                   values["export_background"])
-        box = QMessageBox(self)
-        box.setWindowTitle("Export finished" if report.ok else "Export finished with problems")
-        box.setText("%s\n\n%s" % (report.summary(), report.path))
-        if report.errors:
-            box.setDetailedText("\n".join(report.errors))
-        open_button = box.addButton("Open folder", QMessageBox.ButtonRole.ActionRole)
-        box.addButton(QMessageBox.StandardButton.Close)
-        box.exec()
-        if box.clickedButton() is open_button:
+        picked = messages.choose(self, "Export finished" if report.ok else "Export finished with problems",
+                                 "%s\n\n%s" % (report.summary(), report.path), ["Open folder"],
+                                 detail="\n".join(report.errors),
+                                 kind="inform" if report.ok else "warn")
+        if picked == "Open folder":
             QDesktopServices.openUrl(QUrl.fromLocalFile(report.path))
 
     def export_with(self, task=TASK_SEGMENT, segments=CURVE_SEGMENTS, background=True):
@@ -1633,12 +1629,10 @@ class ShapesWindow(QMainWindow):
     def tool_deactivating(self) -> bool:
         if self._commit_current():
             return True
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Unsaved work",
-            "This image could not be saved.\n\nLeave anyway? The changes to it will be lost.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
-        return answer == QMessageBox.StandardButton.Yes
+            "This image could not be saved.\n\nLeave anyway? The changes to it will be lost.", default=False)
+        return answer
 
     def tool_open(self, folder) -> None:
         self.open_folder(folder)
@@ -1647,12 +1641,10 @@ class ShapesWindow(QMainWindow):
         if getattr(self, "_closed", False):
             return True
         if not self._commit_current():
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Unsaved work",
-                "This image could not be saved.\n\nClose anyway? The changes to it will be lost.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+                "This image could not be saved.\n\nClose anyway? The changes to it will be lost.", default=False)
+            if not answer:
                 return False
         try:
             if self.host is None:

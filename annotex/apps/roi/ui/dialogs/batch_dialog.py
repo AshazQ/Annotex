@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QHBoxLayout,
                                QLabel, QListWidget, QListWidgetItem,
                                QPushButton, QRadioButton)
 
+from .....ui import design
 from ...core import geometry as geo
 from .common import Dialog, card, hint
 
@@ -58,7 +59,7 @@ class BatchApplyDialog(Dialog):
 
         frame2, inner2 = card("Which images")
         picks = QHBoxLayout()
-        picks.setSpacing(6)
+        picks.setSpacing(design.SPACE["s"])
         for label, slot in (("All", self._pick_all),
                             ("None", self._pick_none),
                             ("Same camera", self._pick_same_camera),

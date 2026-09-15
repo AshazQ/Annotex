@@ -6,9 +6,10 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QFileDialog,
-                               QHeaderView, QLabel, QMessageBox, QPushButton, QSlider,
+                               QHeaderView, QLabel, QPushButton, QSlider,
                                QTableWidget, QTableWidgetItem)
 
+from . import messages
 from .common import Dialog, card, hint, row
 
 NEW_CLASS = "__new__"
@@ -148,7 +149,7 @@ class YoloModelDialog(Dialog):
             return
         ok, message = self.check()
         if not ok:
-            QMessageBox.warning(self, "That model cannot be used", message)
+            messages.warn(self, "That model cannot be used", message)
             return
         self.assistant.set_model(self.model, self.names)
         self.assistant.settings.set("yolo_confidence", self.confidence.value())

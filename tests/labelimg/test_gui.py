@@ -25,7 +25,8 @@ OUT = os.environ.get("LABELIMG_SHOT_DIR", "")
 
 from PySide6.QtCore import QEvent, QPointF, Qt                      # noqa: E402
 from PySide6.QtGui import QColor, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPixmap  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox             # noqa: E402
+from PySide6.QtWidgets import QApplication             # noqa: E402
+from annotex.ui.dialogs import messages  # noqa: E402
 
 from annotex.apps.labelimg.config import (BACKUP_DIR, COPY_DIR, DELETED_DIR,  # noqa: E402
                                           FORMAT_VOC, FORMAT_YOLO,
@@ -54,10 +55,10 @@ def shot(widget, name):
 
 app = QApplication(sys.argv[:1])
 app.setStyle("Fusion")
-ANSWER = {"value": QMessageBox.StandardButton.Yes}
-QMessageBox.question = staticmethod(lambda *a, **k: ANSWER["value"])
-QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
-QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+ANSWER = {"value": True}
+messages.ask = lambda *a, **k: ANSWER["value"]
+messages.inform = lambda *a, **k: None
+messages.warn = lambda *a, **k: None
 
 folder = os.path.join(SANDBOX, "batch")
 os.makedirs(folder)
@@ -331,11 +332,11 @@ try:
     stamp = os.path.getmtime(xml_path) + 5
     os.utime(xml_path, (stamp, stamp))
     c.add_box(Box("helmet", 500, 400, 560, 470))
-    ANSWER["value"] = QMessageBox.StandardButton.No
+    ANSWER["value"] = False
     w.save_current()
     ok("refusing the overwrite keeps the file", w.dirty and "helmet" not in read_text(xml_path)
        .split("<name>person</name>")[0])
-    ANSWER["value"] = QMessageBox.StandardButton.Yes
+    ANSWER["value"] = True
     w.save_current()
     ok("accepting the overwrite saves", not w.dirty)
 

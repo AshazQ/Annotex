@@ -13,9 +13,10 @@ annotation off its pixels.
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QTransform
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QWidget
 
+from . import design
 from .palette import qcolor
 
 ZOOM_MIN = 0.05
@@ -267,8 +268,7 @@ class ImageViewport(QWidget):
     # ══════════════════════════════════════════════════════
     def _paint_placeholder(self, painter) -> None:
         painter.setPen(QPen(qcolor("#5a616d")))
-        font = QFont(self.font())
-        font.setPointSizeF(max(9.0, font.pointSizeF() + 1))
+        font = design.font("body", self.font())
         painter.setFont(font)
         painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
                          self.placeholder_text)

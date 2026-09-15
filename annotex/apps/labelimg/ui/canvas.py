@@ -13,13 +13,14 @@ passes it back with add_box().
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics,
+from PySide6.QtGui import (QBrush, QColor, QCursor, QFontMetrics,
                            QPainter, QPen, QPolygonF)
 from PySide6.QtWidgets import QApplication
 
 from annotex.ui.palette import CANVAS, qcolor, readable_on
 from annotex.ui.viewport import ImageViewport, report_paint_fault
 
+from ....ui import design
 from ..config import HANDLE_SIZE, MAX_BOXES_PER_IMAGE, MIN_BOX_SIDE, SNAP_PIXELS
 from ..core.model import Box
 
@@ -117,9 +118,7 @@ class BoxCanvas(ImageViewport):
         self._colours = dict(CANVAS)
         self._good = QColor("#5cbf6b")
         self._colour_for = lambda _label: CANVAS["shape"]
-        self._label_font = QFont()
-        self._label_font.setPointSizeF(max(8.0, self._label_font.pointSizeF() - 0.5))
-        self._label_font.setBold(True)
+        self._label_font = design.font("label")
 
     # ══════════════════════════════════════════════════════
     # CONTENT

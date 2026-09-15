@@ -173,11 +173,12 @@ def main():
     # ── the assistant, in a real window ───────────────────
     from PySide6.QtGui import QColor, QImage
     from PySide6.QtCore import QPointF
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
+    from annotex.ui.dialogs import messages
     app = QApplication(sys.argv[:1])
-    QMessageBox.information = staticmethod(lambda *a, **k: None)
-    QMessageBox.warning = staticmethod(lambda *a, **k: None)
-    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+    messages.inform = lambda *a, **k: None
+    messages.warn = lambda *a, **k: None
+    messages.ask = lambda *a, **k: True
     # The model chooser is built for real, but never waits for a person.
     from annotex.ui.dialogs.ai_dialog import AiModelDialog
     AiModelDialog.exec = lambda self: 0

@@ -9,6 +9,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLabel, QListWidg
 from annotex.ui import icons
 from annotex.ui.widgets import section_label
 
+from ....ui import design
+
+
 KIND_ICONS = {"polygon": "polygon", "obb": "obb", "circle": "circle",
               "ellipse": "ellipse", "freehand": "freehand"}
 
@@ -43,7 +46,7 @@ class ShapeListPanel(QWidget):
         self.list = QListWidget()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.setUniformItemSizes(True)      # the list may hold hundreds
-        self.list.setMinimumHeight(120)
+        self.list.setMinimumHeight(72)
         self.list.setIconSize(QSize(16, 16))
         self.list.itemSelectionChanged.connect(self._emit_selection)
         self.list.itemDoubleClicked.connect(lambda _item: self.editRequested.emit())
@@ -65,7 +68,7 @@ class ShapeListPanel(QWidget):
             button = QToolButton()
             button.setObjectName("Tool")
             button.setToolTip(tip)
-            button.setIconSize(QSize(17, 17))
+            button.setIconSize(QSize(design.ICON["s"], design.ICON["s"]))
             buttons.addWidget(button)
             self.buttons[key] = (button, icon)
         buttons.addStretch(1)

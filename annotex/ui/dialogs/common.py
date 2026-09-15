@@ -7,6 +7,10 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QApplication, QColorDialog, QDialog, QFrame, QHBoxLayout,
                                QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
+from .. import style
+from ..palette import readable_on
+from .. import design
+
 # How much of the screen a dialog may take before its contents scroll.
 SCREEN_SHARE_W, SCREEN_SHARE_H = 0.95, 0.90
 
@@ -55,8 +59,8 @@ class Dialog(QDialog):
             self.setMinimumHeight(min(height, self._screen_limit()[1]))
 
         self._root = QVBoxLayout(self)
-        self._root.setContentsMargins(20, 18, 20, 18)
-        self._root.setSpacing(14)
+        design.margins(self._root, "l", "xl")
+        self._root.setSpacing(design.SPACE["m"])
 
         heading = QLabel(title)
         heading.setObjectName("Title")
@@ -73,13 +77,13 @@ class Dialog(QDialog):
         holder = QWidget()
         holder.setObjectName("DialogBody")
         self.body = QVBoxLayout(holder)
-        self.body.setContentsMargins(0, 0, 0, 0)
-        self.body.setSpacing(12)
+        design.margins(self.body, "0")
+        self.body.setSpacing(design.SPACE["m"])
         self.body_scroll.setWidget(holder)
         self._root.addWidget(self.body_scroll, 1)
 
         self.buttons = QHBoxLayout()
-        self.buttons.setSpacing(8)
+        self.buttons.setSpacing(design.SPACE["s"])
         self.buttons.addStretch(1)
         self._root.addLayout(self.buttons)
 
@@ -146,8 +150,8 @@ def card(title="") -> tuple:
     frame = QFrame()
     frame.setObjectName("Card")
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(16, 14, 16, 14)
-    layout.setSpacing(10)
+    design.margins(layout, "m", "l")
+    layout.setSpacing(design.SPACE["s"])
     if title:
         label = QLabel(title)
         label.setObjectName("SectionHeader")
@@ -155,7 +159,7 @@ def card(title="") -> tuple:
     return frame, layout
 
 
-def row(*widgets, stretch_last=False, spacing=8) -> QWidget:
+def row(*widgets, stretch_last=False, spacing=design.SPACE["s"]) -> QWidget:
     holder = QWidget()
     layout = QHBoxLayout(holder)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -199,12 +203,8 @@ class ColourButton(QPushButton):
             self._refresh()
 
     def _refresh(self) -> None:
-        text_colour = "#ffffff" if self._colour.lightness() < 140 else "#111111"
         self.setText(self._colour.name().upper())
-        self.setStyleSheet(
-            "QPushButton { background: %s; color: %s; border: 1px solid "
-            "rgba(128,128,128,0.5); border-radius: 8px; font-size: 11px; "
-            "font-weight: 600; }" % (self._colour.name(), text_colour))
+        style.swatch(self, self._colour.name(), readable_on(self._colour.name()), "QPushButton")
 
     def _pick(self) -> None:
         chosen = QColorDialog.getColor(self._colour, self,

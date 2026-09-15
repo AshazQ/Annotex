@@ -66,10 +66,11 @@ def main():
     # ── a real window ─────────────────────────────────────
     from PySide6.QtCore import QSize
     from PySide6.QtGui import QColor, QIcon, QImage
-    from PySide6.QtWidgets import QApplication, QDialog, QFrame, QLabel, QMessageBox
+    from PySide6.QtWidgets import QApplication, QDialog, QFrame, QLabel
+    from annotex.ui.dialogs import messages
     app = QApplication(sys.argv[:1])
-    for name in ("question", "information", "warning", "critical"):
-        setattr(QMessageBox, name, staticmethod(lambda *a, **k: QMessageBox.StandardButton.No))
+    messages.ask = lambda *a, **k: False
+    messages.inform = messages.warn = messages.error = lambda *a, **k: None
     original_exec = QDialog.exec
     QDialog.exec = lambda self: 0
 
@@ -119,8 +120,13 @@ def main():
         ok("%s: and the image gets the room" % tool, canvas.width() > wide + 200)
         folded_share = canvas.width() * canvas.height() / float(shell.width() * shell.height())
         ok("%s: panel folded, the image has %.0f %%" % (tool, folded_share * 100), folded_share > 0.52)
-        ok("%s: the strip keeps save and next within reach" % tool,
-           len(side.strip.buttons) >= 4 and all(b.isVisible() for b in side.strip.buttons))
+        ok("%s: the strip keeps saving within reach" % tool,
+           len(side.strip.buttons) >= 3 and all(b.isVisible() for b in side.strip.buttons))
+        # Stepping through images belongs to the round arrows over the image;
+        # the strip does not repeat it.
+        ok("%s: the strip does not repeat previous and next" % tool,
+           not {"prev_image", "next_image"} & set(getattr(page, "strip_buttons", {}))
+           and page.workspace.nav is not None)
         ok("%s: folding is remembered" % tool, page.settings.get("side_collapsed") is True)
         side.toggle()
         for _ in range(10):
@@ -146,6 +152,13 @@ def main():
     page = shell.pages["labelimg"]
     ok("on a short window the rail stays inside it",
        page.workspace.rail.geometry().bottom() <= page.height())
+    from annotex.ui.design import RAIL_BUTTON
+    rail = page.workspace.rail
+    ok("a rail too short for every tool shows whole buttons, not half of one",
+       rail.scroll.viewport().height() % RAIL_BUTTON[1] == 0
+       or rail.scroll.viewport().height() >= rail.scroll.widget().sizeHint().height())
+    ok("every rail button is a circle", all(b.width() == b.height() == RAIL_BUTTON[1]
+                                            for b in rail.buttons))
 
     # the Display setting
     from annotex.shell.display import DisplayDialog

@@ -30,11 +30,12 @@ def ok(label, condition):
 
 
 def main():
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
+    from annotex.ui.dialogs import messages
     app = QApplication(sys.argv[:1])
-    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
-    QMessageBox.information = staticmethod(lambda *a, **k: None)
-    QMessageBox.warning = staticmethod(lambda *a, **k: None)
+    messages.ask = lambda *a, **k: True
+    messages.inform = lambda *a, **k: None
+    messages.warn = lambda *a, **k: None
 
     folder = os.path.join(SANDBOX, "batch")
     os.makedirs(folder)

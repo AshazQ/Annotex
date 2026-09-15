@@ -19,14 +19,17 @@ import os
 from PySide6.QtCore import QByteArray, QProcess, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout,
-                               QLabel, QMainWindow, QMessageBox, QPushButton, QStackedWidget,
+                               QLabel, QMainWindow, QPushButton, QStackedWidget,
                                QVBoxLayout, QWidget)
 
+from ..ui import style
+from ..ui import design
+from ..ui.dialogs import messages
 from ..config import SUITE_NAME, ShellSettings
 from ..ui import icons
 from ..ui.dialogs.common import Dialog
 from ..ui.jobs import JobManager, JobQueuePanel
-from ..ui.palette import apply_palette, resolve_theme, stylesheet, toggled_setting, with_tool
+from ..ui.palette import install_theme, resolve_theme, toggled_setting, with_tool
 from . import registry
 from .home import HomePage
 
@@ -59,7 +62,7 @@ class ShellWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(14, 10, 14, 0)
+        design.margins(root, "s", "m", "0", "m")
         root.setSpacing(0)
         root.addWidget(self._build_bar())
 
@@ -90,7 +93,7 @@ class ShellWindow(QMainWindow):
         bar = QFrame()
         bar.setObjectName("SuiteBar")
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(10, 5, 8, 5)
+        design.margins(layout, "xs", "s")
         layout.setSpacing(4)
         self.bar_mark = QLabel()
         self.bar_mark.setFixedSize(22, 22)
@@ -112,17 +115,35 @@ class ShellWindow(QMainWindow):
         layout.addWidget(self.home_tab)
 
         self.tool_tabs = {}
+        self.tab_holders = {}
+        self.tab_closers = {}
         for number, spec in enumerate(self.tools, start=1):
+            # A tab and the button that closes it travel together, so the
+            # whole pair appears when the tool opens and goes when it closes.
+            holder = QWidget()
+            holder.setObjectName("SuiteTabHolder")
+            pair = QHBoxLayout(holder)
+            design.margins(pair, "0")
+            pair.setSpacing(0)
             tab = QPushButton(spec.name)
             tab.setObjectName("SuiteTab")
             tab.setCheckable(True)
-            tab.setIconSize(QSize(16, 16))
+            tab.setIconSize(QSize(design.ICON["s"], design.ICON["s"]))
             tab.setToolTip("%s%s" % (spec.name, "  [Ctrl+%d]" % number if number <= 9 else ""))
             tab.clicked.connect(lambda _c=False, t=spec.id: self.open_tool(t))
-            tab.setVisible(False)
+            pair.addWidget(tab)
+            closer = QPushButton()
+            closer.setObjectName("SuiteTabClose")
+            closer.setIconSize(QSize(design.ICON["s"], design.ICON["s"]))
+            closer.setToolTip("Close %s  [Ctrl+W]  ·  unsaved work is offered first" % spec.name)
+            closer.clicked.connect(lambda _c=False, t=spec.id: self.close_tool(t))
+            pair.addWidget(closer)
+            holder.setVisible(False)
             self.tab_group.addButton(tab)
             self.tool_tabs[spec.id] = tab
-            layout.addWidget(tab)
+            self.tab_closers[spec.id] = closer
+            self.tab_holders[spec.id] = holder
+            layout.addWidget(holder)
 
         layout.addStretch(1)
         self.jobs_button = QPushButton("")
@@ -140,7 +161,8 @@ class ShellWindow(QMainWindow):
 
     def _build_actions(self) -> None:
         for text, key, slot in (("Home", "Ctrl+Shift+H", self.go_home),
-                                ("Jobs", "Ctrl+J", self.show_jobs)):
+                                ("Jobs", "Ctrl+J", self.show_jobs),
+                                ("Close tool", "Ctrl+W", self.close_current_tool)):
             action = QAction(text, self)
             action.setShortcut(QKeySequence(key))
             action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -157,6 +179,11 @@ class ShellWindow(QMainWindow):
             action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
             action.triggered.connect(lambda _c=False, t=spec.id: self.open_tool(t))
             self.addAction(action)
+        guide = QAction("Style guide", self)
+        guide.setShortcut(QKeySequence("Ctrl+Alt+Shift+D"))
+        guide.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        guide.triggered.connect(self.show_style_guide)
+        self.addAction(guide)
         self.home_theme_action = QAction("Switch theme", self.home)
         self.home_theme_action.setShortcut(QKeySequence("Ctrl+T"))
         self.home_theme_action.triggered.connect(self.toggle_theme)
@@ -177,8 +204,7 @@ class ShellWindow(QMainWindow):
     def _apply_theme(self) -> None:
         icons.clear_cache()
         theme = self.theme
-        apply_palette(self.app, theme)
-        self.app.setStyleSheet(stylesheet(theme))
+        install_theme(self, self.app, theme, hosted=False)
         self.setWindowIcon(icons.app_icon(theme["accent"], theme["appBg"], "suite"))
         self.bar_mark.setPixmap(icons.mark_pixmap("suite", theme["accent"], theme["surfaceAlt"], 22))
         self.home_tab.setIcon(icons.dual_icon("home", theme["sub"], theme["title"], 16))
@@ -186,8 +212,8 @@ class ShellWindow(QMainWindow):
             tool_theme = with_tool(theme, spec.id)
             tab = self.tool_tabs[spec.id]
             tab.setIcon(icons.dual_icon(spec.icon, tool_theme["accent"], tool_theme["accent"], 16))
-            tab.setStyleSheet("QPushButton#SuiteTab:checked { background: %s; color: %s; }"
-                              % (tool_theme["accentSoft"], theme["title"]))
+            self.tab_closers[spec.id].setIcon(icons.icon("cross", theme["muted"], design.ICON["s"]))
+            style.set_tool(tab, spec.id)
         self.jobs_button.setIcon(icons.icon("history", theme["sub"], 16))
         self.display_button.setIcon(icons.icon("display", theme["sub"], 16))
         self.home.set_theme(theme)
@@ -231,7 +257,7 @@ class ShellWindow(QMainWindow):
             page = spec.create(self)
         except Exception as exc:
             QApplication.restoreOverrideCursor()
-            QMessageBox.warning(self, SUITE_NAME, "%s could not be started:\n\n%s" % (spec.name, exc))
+            messages.warn(self, SUITE_NAME, "%s could not be started:\n\n%s" % (spec.name, exc))
             return None
         QApplication.restoreOverrideCursor()
         self.pages[tool_id] = page
@@ -290,6 +316,44 @@ class ShellWindow(QMainWindow):
                 pass
         self.home.refresh()
 
+    def close_tool(self, tool_id) -> bool:
+        """Close one tool and free what it holds - its folder lock, its
+        images - the same way quitting does.  Unsaved work is offered back
+        first, and saying no leaves the tool open."""
+        page = self.pages.get(tool_id)
+        if page is None:
+            return True
+        if self.current_tool_id() == tool_id and not self._leave_current():
+            self._sync_tabs()
+            return False
+        closer = getattr(page, "tool_close", None)
+        try:
+            if closer is not None and not closer():
+                self._sync_tabs()
+                return False
+        except Exception:
+            pass
+        was_current = self.stack.currentWidget() is page
+        self.pages.pop(tool_id, None)
+        self.stack.removeWidget(page)
+        page.setParent(None)
+        page.deleteLater()
+        if was_current:
+            # Fall back to another open tool, or Home when that was the last.
+            remaining = next(iter(self.pages), None)
+            if remaining is None:
+                self.stack.setCurrentWidget(self.home)
+                self.home.refresh()
+            else:
+                self.stack.setCurrentWidget(self.pages[remaining])
+                self.settings.set("last_tool", remaining)
+        self._sync_tabs()
+        return True
+
+    def close_current_tool(self) -> bool:
+        current = self.current_tool_id()
+        return True if current is None else self.close_tool(current)
+
     def go_home(self) -> None:
         if self.stack.currentWidget() is self.home:
             self._sync_tabs()
@@ -305,7 +369,7 @@ class ShellWindow(QMainWindow):
         current = self.current_tool_id()
         self.home_tab.setChecked(current is None)
         for tool_id, tab in self.tool_tabs.items():
-            tab.setVisible(tool_id in self.pages)
+            self.tab_holders[tool_id].setVisible(tool_id in self.pages)
             tab.setChecked(tool_id == current)
         spec = next((s for s in self.tools if s.id == current), None)
         self.setWindowTitle("%s  —  %s" % (SUITE_NAME, spec.name) if spec else SUITE_NAME)
@@ -340,8 +404,12 @@ class ShellWindow(QMainWindow):
         if dialog.restart_requested:
             self.restart()
         elif chosen != before:
-            QMessageBox.information(self, "Display",
+            messages.inform(self, "Display",
                                     "The new interface size is used the next time Annotex starts.")
+
+    def show_style_guide(self) -> None:
+        from .style_guide import StyleGuideDialog
+        StyleGuideDialog(self, self.theme).exec()
 
     def _measure_screen(self) -> None:
         """Work out what Automatic means on the screen in use, for next start."""
@@ -393,11 +461,11 @@ class ShellWindow(QMainWindow):
     def closeEvent(self, event):
         active = self.jobs.active()
         if active:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Jobs still running",
                 "%d job(s) are still running or queued.\n\nCancel them and quit? Unfinished "
                 "outputs are removed; finished ones are kept." % len(active))
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 event.ignore()
                 return
             self.jobs.cancel_all()

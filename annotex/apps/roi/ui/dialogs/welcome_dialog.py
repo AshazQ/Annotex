@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QLabel, QStackedWidget,
                                QVBoxLayout, QWidget)
 
+from .....ui import design
 from ...config import (APP_NAME, APP_TAGLINE, APP_VERSION, JSON_NAME,
                        MAP_NAME, NO_ROI_DIR, PRINTED_DIR, XLSX_NAME)
 from .. import icons
@@ -71,8 +72,8 @@ class WelcomeDialog(Dialog):
     def _page(self, icon_name, title, text) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setSpacing(14)
-        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(design.SPACE["m"])
+        design.margins(layout, "s")
 
         badge = QLabel()
         badge.setPixmap(icons.pixmap(icon_name,

@@ -6,7 +6,8 @@
 import os, sys, json, time, tempfile, shutil
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
+from annotex.ui.dialogs import messages
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtCore import Qt
 from annotex.apps.roi.config import Settings, PROJECT_SETTINGS_NAME, XLSX_NAME, PRINTED_DIR, NO_ROI_DIR
@@ -35,8 +36,8 @@ w.canvas.shapesChanged.emit("test")
 app.processEvents()
 
 # ── batch apply ROIs to the other two cam1 frames ─────────────
-orig_q = QMessageBox.question
-QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+orig_q = messages.ask
+messages.ask = lambda *a, **k: True
 d = BatchApplyDialog(w, w.image_files, w.current_name(), w._statuses(), 2, "rois")
 d._pick_same_camera()
 print("  ..  same-camera picks:", d._checked())
@@ -91,7 +92,7 @@ note = w._load_project_settings(tmp)
 ok("project settings reloaded (%s)" % note,
    settings.get("printed_roi_colour") == "#ff00aa" and settings.get("use_site_format") is True)
 
-QMessageBox.question = orig_q
+messages.ask = orig_q
 w.lock.release(); w.close(); shutil.rmtree(tmp, ignore_errors=True)
 print("="*60)
 if FAILS:

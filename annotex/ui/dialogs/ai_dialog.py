@@ -17,8 +17,9 @@ import threading
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QLabel, QListWidget,
-                               QListWidgetItem, QMessageBox, QProgressBar, QPushButton)
+                               QListWidgetItem, QProgressBar, QPushButton)
 
+from . import messages
 from ..dialogs.common import Dialog, card, hint, row
 
 WHERE_TO_GET = (
@@ -216,7 +217,7 @@ class AiModelDialog(Dialog):
             return
         missing = self.assistant.packages_missing()
         if missing:
-            QMessageBox.warning(self, "The AI tool is not installed",
+            messages.warn(self, "The AI tool is not installed",
                                 self.assistant.install_hint())
             return
         if model.installed(self.folder or None):
@@ -282,7 +283,7 @@ class AiModelDialog(Dialog):
         ok, message = self._check()
         if not ok:
             self.status.setText("%s downloaded, but it cannot be used." % name)
-            QMessageBox.warning(self, "That model cannot be used", message)
+            messages.warn(self, "That model cannot be used", message)
             return
         self.assistant.set_model(encoder, decoder, name)
         self.changed = True
@@ -296,7 +297,7 @@ class AiModelDialog(Dialog):
                                 "it left off.")
             return
         self.status.setText("The download did not finish.")
-        QMessageBox.warning(self, "The model could not be downloaded", message)
+        messages.warn(self, "The model could not be downloaded", message)
 
     def reject(self) -> None:
         if self.downloading:
@@ -340,7 +341,7 @@ class AiModelDialog(Dialog):
             os.makedirs(self.folder, exist_ok=True)
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.folder))
         except Exception as exc:
-            QMessageBox.warning(self, "Could not open the folder", str(exc))
+            messages.warn(self, "Could not open the folder", str(exc))
 
     def _clear(self) -> None:
         self.encoder = self.decoder = self._name = ""
@@ -375,11 +376,10 @@ class AiModelDialog(Dialog):
 
     def _test(self) -> None:
         ok, message = self._check()
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Information if ok else QMessageBox.Icon.Warning)
-        box.setWindowTitle("AI model" if ok else "That model cannot be used")
-        box.setText(message)
-        box.exec()
+        if ok:
+            messages.inform(self, "AI model", message)
+        else:
+            messages.warn(self, "That model cannot be used", message)
 
     def _accept(self) -> None:
         if not self.encoder and not self.decoder:
@@ -389,7 +389,7 @@ class AiModelDialog(Dialog):
             return
         ok, message = self._check()
         if not ok:
-            QMessageBox.warning(self, "That model cannot be used", message)
+            messages.warn(self, "That model cannot be used", message)
             return
         self.assistant.set_model(self.encoder, self.decoder, self._name)
         self.changed = True

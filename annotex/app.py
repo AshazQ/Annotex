@@ -193,7 +193,8 @@ def install_excepthook(window_getter=None) -> None:
             path = _write_crash(exc_type, exc_value, exc_tb)
             if _dialogs_shown[0] >= MAX_ERROR_DIALOGS:
                 return
-            from PySide6.QtWidgets import QApplication, QMessageBox
+            from PySide6.QtWidgets import QApplication
+            from .ui.dialogs import messages
             if QApplication.instance() is None:
                 return
             _dialogs_shown[0] += 1
@@ -202,17 +203,12 @@ def install_excepthook(window_getter=None) -> None:
                 window = window_getter() if window_getter else None
             except Exception:
                 window = None
-            box = QMessageBox(window)
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setWindowTitle("Something went wrong")
-            box.setText("%s hit an unexpected error, but your annotations on "
-                        "disk are untouched.  You can carry on working."
-                        % SUITE_NAME)
-            box.setInformativeText("%s: %s\n\nA report was written to:\n%s"
-                                   % (exc_type.__name__, exc_value, path))
-            box.setDetailedText("".join(traceback.format_exception(
-                exc_type, exc_value, exc_tb)))
-            box.exec()
+            messages.error(
+                window, "Something went wrong",
+                "%s hit an unexpected error, but your annotations on disk are untouched.  "
+                "You can carry on working.\n\n%s: %s\n\nA report was written to:\n%s"
+                % (SUITE_NAME, exc_type.__name__, exc_value, path),
+                detail="".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
         except Exception:
             pass
         finally:

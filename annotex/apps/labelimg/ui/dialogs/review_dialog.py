@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen, QPixmap
+from PySide6.QtGui import QBrush, QColor, QFontMetrics, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QGridLayout,
                                QHBoxLayout, QHeaderView, QLabel, QListWidget,
                                QListWidgetItem, QSplitter, QTableWidget,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QGridLayout,
 from annotex.ui.dialogs.common import Dialog, card, hint
 from annotex.ui.palette import qcolor, readable_on
 
+from .....ui import design
 from ..panels import swatch_icon
 
 FILTERS = (("all", "Every image"), ("labelled", "Labelled"),
@@ -68,9 +69,7 @@ class BoxPreview(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(target.adjusted(-2, -2, 2, 2))
 
-        font = QFont(self.font())
-        font.setBold(True)
-        font.setPointSizeF(max(8.0, font.pointSizeF() - 1))
+        font = design.font("label", self.font())
         painter.setFont(font)
         metrics = QFontMetrics(font)
         for box in self._boxes:

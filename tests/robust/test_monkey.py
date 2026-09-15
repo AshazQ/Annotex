@@ -29,7 +29,8 @@ os.environ["XDG_CONFIG_HOME"] = os.path.join(SANDBOX, "config")
 
 from PySide6.QtCore import QEvent, QPointF, Qt                        # noqa: E402
 from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent      # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox               # noqa: E402
+from PySide6.QtWidgets import QApplication               # noqa: E402
+from annotex.ui.dialogs import messages  # noqa: E402
 
 STEPS = int(sys.argv[1]) if len(sys.argv) > 1 else 1200
 ESCAPED = []
@@ -51,9 +52,9 @@ sys.excepthook = _hook
 
 app = QApplication(sys.argv[:1])
 app.setStyle("Fusion")
-QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
-QMessageBox.information = staticmethod(lambda *a, **k: None)
-QMessageBox.warning = staticmethod(lambda *a, **k: None)
+messages.ask = lambda *a, **k: True
+messages.inform = lambda *a, **k: None
+messages.warn = lambda *a, **k: None
 
 from annotex.apps.labelimg.core.class_store import ClassStore         # noqa: E402
 from annotex.ui.dialogs.ai_dialog import AiModelDialog                # noqa: E402

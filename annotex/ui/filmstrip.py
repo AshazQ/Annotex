@@ -14,10 +14,11 @@ import os
 
 from PySide6.QtCore import (QObject, QRect, QRectF, QRunnable, Qt,
                             QThreadPool, Signal, Slot)
-from PySide6.QtGui import (QBrush, QColor, QFont, QImage, QPainter, QPen,
+from PySide6.QtGui import (QBrush, QColor, QImage, QPainter, QPen,
                            QPixmap)
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from . import design
 from .palette import qcolor
 
 THUMB_W, THUMB_H = 96, 72
@@ -254,8 +255,7 @@ class FilmStrip(QWidget):
         accent = qcolor(theme.get("accent", "#df5e3b"))
         placeholder = qcolor(theme.get("surfaceAlt", "#252a33"))
         label_colour = qcolor(theme.get("muted", "#6f7784"))
-        font = QFont(self.font())
-        font.setPointSizeF(max(7.5, font.pointSizeF() - 2.5))
+        font = design.font("caption", self.font())
         painter.setFont(font)
 
         first = max(0, int((self._offset - PADDING) // self._step()) - 1)

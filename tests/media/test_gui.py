@@ -23,7 +23,8 @@ os.environ["XDG_CONFIG_HOME"] = os.path.join(SANDBOX, "config")
 OUT = os.environ.get("ANNOTEX_SHOT_DIR", "")
 
 from PIL import Image                                                # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox              # noqa: E402
+from PySide6.QtWidgets import QApplication              # noqa: E402
+from annotex.ui.dialogs import messages  # noqa: E402
 
 from annotex.apps.images import ai, sorter                           # noqa: E402
 from annotex.apps.images.selftest import _onnx_models                # noqa: E402
@@ -86,7 +87,7 @@ def page(cls):
 
 app = QApplication(sys.argv[:1])
 app.setStyle("Fusion")
-QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+messages.ask = lambda *a, **k: True
 jobs = JobManager()
 
 videos = os.path.join(SANDBOX, "videos")

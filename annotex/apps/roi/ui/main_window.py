@@ -10,10 +10,12 @@ from PySide6.QtCore import (QObject, QRunnable, QSize, Qt, QThreadPool, QTimer,
                             Signal, Slot)
 from PySide6.QtGui import QAction, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame,
-                               QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-                               QPushButton, QScrollArea, QSplitter, QStatusBar,
+                               QHBoxLayout, QLabel, QMainWindow, QPushButton, QScrollArea, QSplitter, QStatusBar,
                                QVBoxLayout, QWidget)
 
+from ....ui import style
+from ....ui import design
+from ....ui.dialogs import messages
 from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, FULL_VIEW, IMG_EXTS,
                       NO_ROI_DIR, OUTPUT_DIRS, PRINTED_DIR,
                       PROJECT_SETTINGS_NAME, SITE_VIEW)
@@ -264,7 +266,7 @@ class MainWindow(QMainWindow):
         self.canvas_frame = QFrame()
         self.canvas_frame.setObjectName("Card")
         frame_layout = QVBoxLayout(self.canvas_frame)
-        frame_layout.setContentsMargins(3, 3, 3, 3)
+        design.margins(frame_layout, "xs")
         self.canvas = Canvas()
         frame_layout.addWidget(self.canvas)
         self.filmstrip = FilmStrip()
@@ -287,7 +289,7 @@ class MainWindow(QMainWindow):
         self.side = self.workspace.side
         # What stays within reach while the panel is folded away.
         self.strip_buttons = {}
-        for action_id in ("save_roi", "mark_no_roi", "prev_image", "next_image"):
+        for action_id in ("save_roi", "mark_no_roi"):
             button = self._rail_button(action_id)
             button.clicked.connect(self.act(action_id).trigger)
             self.strip_buttons[action_id] = button
@@ -301,7 +303,7 @@ class MainWindow(QMainWindow):
         button = QPushButton()
         button.setObjectName("Tool")
         button.setCheckable(checkable)
-        button.setIconSize(QSize(19, 19))
+        button.setIconSize(QSize(design.ICON["l"], design.ICON["l"]))
         key = self.keys.get(action_id, "")
         button.setToolTip("%s%s" % (action.text(), ("   [%s]" % key) if key else ""))
         return button
@@ -347,8 +349,8 @@ class MainWindow(QMainWindow):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         holder = QWidget()
         layout = QVBoxLayout(holder)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(14)
+        design.margins(layout, "m")
+        layout.setSpacing(design.SPACE["m"])
 
         self.minimap = MiniMap()
         layout.addWidget(self.minimap)
@@ -373,7 +375,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.save_button)
 
         buttons = QHBoxLayout()
-        buttons.setSpacing(6)
+        buttons.setSpacing(design.SPACE["s"])
         self.no_roi_button = QPushButton("No ROI")
         self.no_roi_button.clicked.connect(self.act("mark_no_roi").trigger)
         self.export_button = QPushButton("Export")
@@ -654,21 +656,21 @@ class MainWindow(QMainWindow):
     def _refresh_state_chip(self) -> None:
         name = self.current_name()
         if self.read_only:
-            text, colour = "read-only", self.theme["warn"]
+            text, colour = "read-only", "warn"
         elif self.dirty:
-            text, colour = "● write failed", self.theme["danger"]
+            text, colour = "● write failed", "danger"
         elif name is None:
-            text, colour = "", self.theme["sub"]
+            text, colour = "", "sub"
         elif self.canvas.shapes and self._shapes_match_saved(name):
-            text, colour = "● saved", self.theme["good"]
+            text, colour = "● saved", "good"
         elif self.canvas.shapes:
-            text, colour = "● unsaved", self.theme["accent"]
+            text, colour = "● unsaved", "accent"
         elif name in self.no_roi_saved:
-            text, colour = "○ no ROI", self.theme["sub"]
+            text, colour = "○ no ROI", "sub"
         else:
-            text, colour = "· empty", self.theme["sub"]
+            text, colour = "· empty", "sub"
         self.state_chip.setText(text)
-        self.state_chip.setStyleSheet("color: %s;" % colour)
+        style.set_tone(self.state_chip, colour)
 
     def _refresh_session(self) -> None:
         self.session_label.setText(self.timer.summary())
@@ -699,23 +701,23 @@ class MainWindow(QMainWindow):
         writable, why = folder_is_writable(folder)
         self.read_only = not writable
         if not writable:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Read-only folder",
                 "This folder cannot be written to:\n%s\n\nOpen it read-only?\n"
                 "You will be able to look at existing annotations but not "
                 "save changes." % why)
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
 
         lock_note = ""
         if writable:
             acquired, message = self.lock.acquire(folder)
             if not acquired:
-                answer = QMessageBox.question(
+                answer = messages.ask(
                     self, "Folder in use",
                     "%s\n\nOpening it anyway can corrupt the outputs.\n"
                     "Continue?" % message)
-                if answer != QMessageBox.StandardButton.Yes:
+                if not answer:
                     return
                 self.lock.acquire(folder, force=True)
                 lock_note = "lock overridden - close the other session"
@@ -1053,11 +1055,11 @@ class MainWindow(QMainWindow):
             self._status("Nothing to clear", "info")
             return
         if self.settings.get("confirm_clear_all", True):
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Clear every ROI",
                 "Remove all %d ROI(s) from this image?\n\nCtrl+Z brings them "
                 "back." % len(self.canvas.shapes))
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
         self.canvas.clear_all()
 
@@ -1131,11 +1133,11 @@ class MainWindow(QMainWindow):
         if self.read_only:
             self._status("This batch is open read-only", "warning")
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Move image out of the batch",
             "Move %s into deleted_images?\n\nIts ROIs are taken out of the batch outputs too. "
             "Nothing is erased: move the image back and annotate it again to restore it." % name)
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         target = os.path.join(self.folder, "deleted_images")
 
@@ -1184,11 +1186,11 @@ class MainWindow(QMainWindow):
             self._status("This batch is open read-only", "warning")
             return
         if self.canvas.shapes:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Mark as no_roi",
                 "This image has %d ROI(s).\n\nDiscard them and file it under "
                 "%s?" % (len(self.canvas.shapes), NO_ROI_DIR))
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
         self.canvas.set_shapes([])
         if self._write_no_roi(name):
@@ -1208,13 +1210,13 @@ class MainWindow(QMainWindow):
         width, height = self.image_size
         keep, notes = [], []
         for position, shape in enumerate(self.canvas.shapes):
-            clean, messages = shape.validated(width, height)
+            clean, problems = shape.validated(width, height)
             if clean is None:
                 notes.append("ROI %d dropped (%s)"
-                             % (position + 1, "; ".join(messages)))
+                             % (position + 1, "; ".join(problems)))
                 continue
-            if messages:
-                notes.append("ROI %d: %s" % (position + 1, "; ".join(messages)))
+            if problems:
+                notes.append("ROI %d: %s" % (position + 1, "; ".join(problems)))
             keep.append(clean)
 
         if not keep:
@@ -1318,16 +1320,14 @@ class MainWindow(QMainWindow):
         """Someone changed the spreadsheet since we read it - ask first."""
         if not self.store.changed_externally():
             return True
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "The spreadsheet changed on disk",
             "%s has been modified since this session read it - another "
             "session or another person may have written to it.\n\n"
             "Overwrite it with what is in this window?\n\n"
             "The previous contents stay available as the .bak copy."
-            % os.path.basename(self.store.xlsx_path),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
-        if answer == QMessageBox.StandardButton.Yes:
+            % os.path.basename(self.store.xlsx_path), default=False)
+        if answer:
             self.store.touch_stamp()          # accept it and move on
             self.audit.record("overwrite_external",
                               detail="user chose to overwrite")
@@ -1391,11 +1391,11 @@ class MainWindow(QMainWindow):
         if dialog.exec() != Dialog.DialogCode.Accepted:
             return
         if dialog.overwrite:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Replace existing work",
                 "Some of the chosen images already have a saved decision.\n\n"
                 "Replace them?")
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -1496,11 +1496,11 @@ class MainWindow(QMainWindow):
         shapes = polys_to_shapes(polys, kinds)
 
         summary = ("%d ROI(s)" % len(shapes)) if shapes else "a no_roi decision"
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Restore from backup",
             "The backup holds %s for %s.\n\nReplace what is on screen with "
             "it?\n\nNothing is written until you save." % (summary, name))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
 
         self.canvas.set_shapes(shapes)
@@ -1584,11 +1584,11 @@ class MainWindow(QMainWindow):
         if name not in self.image_files:
             self.draft.clear()
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Unsaved work recovered",
             "A draft for %s was left behind by an earlier session "
             "(%s).\n\nRestore it?" % (name, pending.get("saved_at", "unknown")))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             self.draft.clear()
             return
         self.go_to_name(name)
@@ -1970,14 +1970,12 @@ class MainWindow(QMainWindow):
             self._report_exception(exc)
             committed = False
         if not committed or self.dirty:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Unsaved work",
                 "The last write did not complete, so this image is not on "
                 "disk.\n\nLeave anyway? The draft is kept and offered back "
-                "when you return.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+                "when you return.", default=False)
+            if not answer:
                 return False
         self._write_draft()
         return True
@@ -1994,13 +1992,11 @@ class MainWindow(QMainWindow):
             committed = False
 
         if not committed or self.dirty:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Unsaved work",
                 "The last write did not complete, so this image is not on "
-                "disk.\n\nClose anyway and lose it?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+                "disk.\n\nClose anyway and lose it?", default=False)
+            if not answer:
                 return False
 
         try:

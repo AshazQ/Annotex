@@ -16,6 +16,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QHBoxLayout,
 
 from annotex.ui.dialogs.common import Dialog, card, hint
 
+from .....ui import design
+
+
 APPLY_BOXES = "boxes"
 APPLY_BACKGROUND = "background"
 MARKS = {"labelled": "●", "background": "○", "verified": "✓", "todo": "·"}
@@ -70,7 +73,7 @@ class BatchApplyDialog(Dialog):
 
         frame2, inner2 = card("Which images")
         picks = QHBoxLayout()
-        picks.setSpacing(6)
+        picks.setSpacing(design.SPACE["s"])
         for label, slot in (("All", self._pick_all), ("None", self._pick_none),
                             ("Same camera", self._pick_same_camera),
                             ("Not started", self._pick_untouched),

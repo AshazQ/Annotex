@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QGridLayout, Q
                                QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout,
                                QWidget)
 
+from ..ui import style
+from ..ui import design
 from ..config import SUITE_NAME, SUITE_TAGLINE, SUITE_VERSION
 from ..ui import icons
 from ..ui.palette import mix, qcolor, with_tool
@@ -82,18 +84,6 @@ class _Lift:
     def hideEvent(self, event):
         self._lift.setEnabled(False)
         super().hideEvent(event)
-
-
-def _card_style(object_name, t) -> str:
-    """Per-card rules: the card's own hue on its hover border and buttons."""
-    return ("QFrame#%(n)s:hover { border-color: %(accent)s; }"
-            "QPushButton#Primary { background: %(accent)s; border-color: %(accent)s; color: %(on)s; }"
-            "QPushButton#Primary:hover { background: %(hover)s; border-color: %(hover)s; }"
-            "QPushButton#Link:hover { color: %(accent)s; }"
-            "QLabel#ToolChip { background: %(soft)s; color: %(accent)s; border-radius: 9px;"
-            " padding: 2px 9px; font-size: 11px; font-weight: 600; }"
-            % {"n": object_name, "accent": t["accent"], "hover": t["accentHover"],
-               "on": t["onAccent"], "soft": t["accentSoft"]})
 
 
 def _tile_pixmap(icon, accent, soft, size=46) -> QPixmap:
@@ -188,8 +178,8 @@ class FeatureCard(_Lift, QFrame):
         layout.addWidget(self.band)
 
         body = QVBoxLayout()
-        body.setContentsMargins(20, 14, 20, 18)
-        body.setSpacing(9)
+        design.margins(body, "m", "l", "l", "l")
+        body.setSpacing(design.SPACE["s"])
         top = QHBoxLayout()
         name = QLabel(spec.name)
         name.setObjectName("CardTitle")
@@ -208,7 +198,7 @@ class FeatureCard(_Lift, QFrame):
         description.setWordWrap(True)
         body.addWidget(description)
         chips = QHBoxLayout()
-        chips.setSpacing(6)
+        chips.setSpacing(design.SPACE["s"])
         for text in spec.highlights:
             chip = QLabel(text)
             chip.setObjectName("ToolChip")
@@ -239,7 +229,7 @@ class FeatureCard(_Lift, QFrame):
         t = with_tool(theme, self.spec.id)
         self.band.set_theme(t)
         self._lift_colour = qcolor(t["accent"], 80 if t["kind"] == "dark" else 60)
-        self.setStyleSheet(_card_style("FeatureCard", t))
+        style.set_tool(self, self.spec.id)
 
     def set_recent(self, folders) -> None:
         if self.spec.recent is None:
@@ -300,8 +290,8 @@ class TileCard(_Lift, QFrame):
         self.setToolTip("%s - %s" % (spec.name, spec.description))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 14, 14, 14)
-        layout.setSpacing(14)
+        design.margins(layout, "m", "m", "m", "l")
+        layout.setSpacing(design.SPACE["m"])
         self.mark = QLabel()
         self.mark.setFixedSize(46, 46)
         layout.addWidget(self.mark, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -321,7 +311,7 @@ class TileCard(_Lift, QFrame):
         tagline.setWordWrap(True)
         texts.addWidget(tagline)
         chips = QHBoxLayout()
-        chips.setSpacing(6)
+        chips.setSpacing(design.SPACE["s"])
         for text in spec.highlights[:2]:
             chip = QLabel(text)
             chip.setObjectName("ToolChip")
@@ -339,7 +329,7 @@ class TileCard(_Lift, QFrame):
         t = with_tool(theme, self.spec.id)
         self.mark.setPixmap(_tile_pixmap(_tool_icon(self.spec), t["accent"], t["accentSoft"]))
         self._lift_colour = qcolor(t["accent"], 70 if t["kind"] == "dark" else 55)
-        self.setStyleSheet(_card_style("TileCard", t))
+        style.set_tool(self, self.spec.id)
 
     def set_recent(self, folders) -> None:
         pass
@@ -367,8 +357,8 @@ class ContinueCard(_Lift, QFrame):
         self._image = QImage()
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 12, 14, 12)
-        layout.setSpacing(14)
+        design.margins(layout, "m")
+        layout.setSpacing(design.SPACE["m"])
         self.thumb = QLabel()
         self.thumb.setFixedSize(THUMB_W, THUMB_H)
         layout.addWidget(self.thumb)
@@ -413,8 +403,7 @@ class ContinueCard(_Lift, QFrame):
         self._t = with_tool(theme, self.spec.id)
         t = self._t
         self._lift_colour = qcolor(t["accent"], 70 if t["kind"] == "dark" else 55)
-        self.setStyleSheet(_card_style("ContinueCard", t)
-                           + "QFrame#ContinueCard { border-left: 4px solid %s; }" % t["accent"])
+        style.set_tool(self, self.spec.id)
         self.bar.set_theme(t)
         self._paint()
 
@@ -490,7 +479,7 @@ class HomePage(QWidget):
         holder = QWidget()
         scroll.setWidget(holder)
         centre = QHBoxLayout(holder)
-        centre.setContentsMargins(24, 26, 24, 26)
+        design.margins(centre, "xl")
         centre.addStretch(1)
         column = QWidget()
         column.setMaximumWidth(1320)
@@ -499,7 +488,7 @@ class HomePage(QWidget):
         centre.addStretch(1)
         body = QVBoxLayout(column)
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(14)
+        body.setSpacing(design.SPACE["m"])
 
         hero = QHBoxLayout()
         hero.setSpacing(16)
@@ -522,11 +511,11 @@ class HomePage(QWidget):
 
         self.continue_section = QWidget()
         continue_layout = QVBoxLayout(self.continue_section)
-        continue_layout.setContentsMargins(0, 6, 0, 0)
-        continue_layout.setSpacing(10)
+        design.margins(continue_layout, "s", "0", "0", "0")
+        continue_layout.setSpacing(design.SPACE["s"])
         continue_layout.addWidget(section_label("Continue where you left off"))
         self.continue_row = QHBoxLayout()
-        self.continue_row.setSpacing(14)
+        self.continue_row.setSpacing(design.SPACE["m"])
         continue_layout.addLayout(self.continue_row)
         self.continue_section.setVisible(False)
         body.addWidget(self.continue_section)
@@ -539,8 +528,8 @@ class HomePage(QWidget):
             body.addSpacing(8)
             body.addWidget(section_label(label))
             grid = QGridLayout()
-            grid.setHorizontalSpacing(14)
-            grid.setVerticalSpacing(14)
+            grid.setHorizontalSpacing(design.SPACE["m"])
+            grid.setVerticalSpacing(design.SPACE["m"])
             body.addLayout(grid)
             cards = []
             card_class = FeatureCard if key == "annotation" else TileCard

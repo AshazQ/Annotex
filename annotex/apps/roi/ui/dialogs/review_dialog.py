@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QGridLayout, QHBoxLayout,
                                QListWidgetItem, QSplitter, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
+from .....ui import design
 from ...config import NO_ROI_DIR, PRINTED_DIR
 from ...core import report as reporting
 from .common import Dialog, card, hint
@@ -206,8 +207,8 @@ class DashboardDialog(Dialog):
         totals = self.stats["totals"]
 
         tiles = QGridLayout()
-        tiles.setHorizontalSpacing(10)
-        tiles.setVerticalSpacing(6)
+        tiles.setHorizontalSpacing(design.SPACE["s"])
+        tiles.setVerticalSpacing(design.SPACE["s"])
         entries = [("Images", totals["images"]),
                    ("ROI drawn", totals["annotated"]),
                    ("No ROI", totals["no_roi"]),

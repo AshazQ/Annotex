@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView,
 from annotex.ui.widgets import (CommentBox, MiniMap, StatsPanel,  # noqa: F401
                                 divider, section_label)
 
+from ....ui import design
 from ..config import SHAPE_CIRCLE, SHAPE_RECT
 from . import icons
 from .palette import qcolor
@@ -41,7 +42,7 @@ class RoiListPanel(QWidget):
         layout.setSpacing(8)
 
         header = QHBoxLayout()
-        header.setSpacing(6)
+        header.setSpacing(design.SPACE["s"])
         header.addWidget(section_label("ROIs on this image"))
         header.addStretch(1)
         self.count_label = QLabel("0")
@@ -59,7 +60,7 @@ class RoiListPanel(QWidget):
         layout.addWidget(self.list, 1)
 
         actions = QHBoxLayout()
-        actions.setSpacing(6)
+        actions.setSpacing(design.SPACE["s"])
         self.btn_visible = self._action("eye", "Show or hide the selected ROI")
         self.btn_lock = self._action("lock", "Lock the selected ROI so it "
                                              "cannot be moved")
@@ -81,7 +82,7 @@ class RoiListPanel(QWidget):
         button = QToolButton()
         button.setObjectName("Tool")
         button.setToolTip(tip)
-        button.setIconSize(QSize(17, 17))
+        button.setIconSize(QSize(design.ICON["s"], design.ICON["s"]))
         button.setProperty("iconName", name)
         button.setAutoRaise(True)
         return button
@@ -187,7 +188,7 @@ class VertexInspector(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(design.SPACE["s"])
         header = QHBoxLayout()
         header.addWidget(section_label("Vertices"))
         header.addStretch(1)

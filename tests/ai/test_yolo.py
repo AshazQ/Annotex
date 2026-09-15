@@ -182,11 +182,12 @@ def main():
     import time
     from PySide6.QtCore import QEvent, QPointF, Qt
     from PySide6.QtGui import QKeyEvent, QMouseEvent
-    from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+    from PySide6.QtWidgets import QApplication, QDialog
+    from annotex.ui.dialogs import messages
     app = QApplication(sys.argv[:1])
-    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
-    QMessageBox.information = staticmethod(lambda *a, **k: None)
-    QMessageBox.warning = staticmethod(lambda *a, **k: None)
+    messages.ask = lambda *a, **k: True
+    messages.inform = lambda *a, **k: None
+    messages.warn = lambda *a, **k: None
     QDialog.exec = lambda self: 0
     from annotex.ui.dialogs.yolo_dialog import ClassMapDialog
     asked = []

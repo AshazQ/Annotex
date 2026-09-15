@@ -19,7 +19,7 @@ from PySide6.QtGui import (QAction, QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QButtonGroup,
                                QComboBox, QFileDialog, QFrame, QHBoxLayout,
                                QKeySequenceEdit, QLabel, QLineEdit, QMainWindow,
-                               QMenu, QMessageBox, QPlainTextEdit, QPushButton,
+                               QMenu, QPlainTextEdit, QPushButton,
                                QScrollArea, QSplitter, QStatusBar, QTextEdit,
                                QVBoxLayout, QWidget)
 from PySide6.QtGui import QImageReader
@@ -38,6 +38,9 @@ from annotex.ui.widgets import MiniMap, StatsPanel, divider, section_label
 from annotex.ui import keymap
 from annotex.ui.workspace import ElidedLabel, ToolRail, assemble
 
+from ....ui import style
+from ....ui import design
+from ....ui.dialogs import messages
 from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, BACKUP_DIR,
                       DRAFT_NAME, FORMAT_EXT, FORMAT_LABELS, FORMAT_VOC,
                       FORMAT_YOLO, FORMATS, HOTKEY_DIGITS, LOCK_NAME,
@@ -316,7 +319,7 @@ class LabelImgWindow(QMainWindow):
         self.canvas_frame = QFrame()
         self.canvas_frame.setObjectName("Card")
         frame_layout = QVBoxLayout(self.canvas_frame)
-        frame_layout.setContentsMargins(3, 3, 3, 3)
+        design.margins(frame_layout, "xs")
         self.canvas = BoxCanvas()
         self.canvas.set_colour_provider(self.colour_for)
         frame_layout.addWidget(self.canvas)
@@ -341,7 +344,7 @@ class LabelImgWindow(QMainWindow):
         self.side = self.workspace.side
         # What stays within reach while the panel is folded away.
         self.strip_buttons = {}
-        for action_id in ("save", "accept_frame", "mark_background", "prev_image", "next_image"):
+        for action_id in ("save", "accept_frame", "mark_background"):
             button = self._tool_button(action_id)
             button.clicked.connect(self.act(action_id).trigger)
             self.strip_buttons[action_id] = button
@@ -356,7 +359,7 @@ class LabelImgWindow(QMainWindow):
         button.setObjectName("Tool")
         button.setCheckable(checkable)
         button.setFixedSize(34, 32)
-        button.setIconSize(QSize(19, 19))
+        button.setIconSize(QSize(design.ICON["l"], design.ICON["l"]))
         key = self.keys.get(action_id, "")
         button.setToolTip("%s%s" % (action.text(), ("   [%s]" % key) if key else ""))
         return button
@@ -365,8 +368,8 @@ class LabelImgWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("Toolbar")
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(6, 5, 6, 5)
-        layout.setSpacing(3)
+        design.margins(layout, "xs", "s")
+        layout.setSpacing(design.SPACE["xs"])
         return frame, layout
 
     def _build_rail(self) -> ToolRail:
@@ -413,7 +416,7 @@ class LabelImgWindow(QMainWindow):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         holder = QWidget()
         layout = QVBoxLayout(holder)
-        layout.setContentsMargins(14, 14, 14, 6)
+        design.margins(layout, "m", "m", "s", "m")
         layout.setSpacing(12)
 
         self.minimap = MiniMap()
@@ -421,15 +424,15 @@ class LabelImgWindow(QMainWindow):
         self.active_chip = ActiveClassChip()
         layout.addWidget(self.active_chip)
         self.palette = ClassPalette()
-        layout.addWidget(self.palette, 3)
+        layout.addWidget(self.palette, 5)
         self.box_panel = BoxListPanel()
-        layout.addWidget(self.box_panel, 2)
+        layout.addWidget(self.box_panel, 1)
         scroll.setWidget(holder)
 
         footer = QWidget()
         foot = QVBoxLayout(footer)
-        foot.setContentsMargins(14, 6, 14, 14)
-        foot.setSpacing(10)
+        design.margins(foot, "s", "m", "m", "m")
+        foot.setSpacing(design.SPACE["s"])
         foot.addWidget(divider())
         self.stats_panel = StatsPanel(fields=(
             ("total", "Images", "title", None),
@@ -462,7 +465,7 @@ class LabelImgWindow(QMainWindow):
         self.save_button.clicked.connect(self.act("save").trigger)
         foot.addWidget(self.save_button)
         buttons = QHBoxLayout()
-        buttons.setSpacing(6)
+        buttons.setSpacing(design.SPACE["s"])
         self.accept_button = QPushButton("Accept  ⏎")
         self.accept_button.setToolTip("Save this frame as it is and go to the next [Enter]")
         self.accept_button.clicked.connect(self.act("accept_frame").trigger)
@@ -487,7 +490,7 @@ class LabelImgWindow(QMainWindow):
     def _build_statusbar(self) -> None:
         bar = QStatusBar()
         bar.setSizeGripEnabled(False)
-        bar.setContentsMargins(6, 0, 12, 0)   # the last chip is not clipped
+        design.margins(bar, "0", "m", "0", "s")   # the last chip is not clipped
         self.setStatusBar(bar)
         self.status_label = QLabel("")
         self.status_label.setObjectName("Hint")
@@ -859,24 +862,24 @@ class LabelImgWindow(QMainWindow):
         rel = self.current_name()
         theme = self.theme
         if self.read_only:
-            text, colour = "read-only", theme["warn"]
+            text, colour = "read-only", "warn"
         elif self.dirty:
-            text, colour = "● write failed", theme["danger"]
+            text, colour = "● write failed", "danger"
         elif rel is None:
-            text, colour = "", theme["sub"]
+            text, colour = "", "sub"
         elif self._matches_saved(rel):
             if self.canvas.boxes:
-                text, colour = "● saved", theme["good"]
+                text, colour = "● saved", "good"
             else:
-                text, colour = "○ background", theme["sub"]
+                text, colour = "○ background", "sub"
         elif rel not in self.saved and not self.canvas.boxes and not self.verified:
-            text, colour = "· not started", theme["sub"]
+            text, colour = "· not started", "sub"
         else:
-            text, colour = "● unsaved", theme["accent"]
+            text, colour = "● unsaved", "accent"
         if self.verified and rel is not None:
             text += "  ✓ verified"
         self.state_chip.setText(text)
-        self.state_chip.setStyleSheet("color: %s;" % colour)
+        style.set_tone(self.state_chip, colour)
 
     # ══════════════════════════════════════════════════════
     # CLASSES
@@ -1122,22 +1125,22 @@ class LabelImgWindow(QMainWindow):
 
         writable, why = folder_is_writable(folder)
         if not writable:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Read-only folder",
                 "This folder cannot be written to:\n%s\n\nOpen it read-only? You "
                 "can look at the annotations but not change them." % why)
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
 
         lock_note = ""
         if writable:
             acquired, message = self.lock.acquire(folder)
             if not acquired:
-                answer = QMessageBox.question(
+                answer = messages.ask(
                     self, "Folder in use",
                     "%s\n\nTwo sessions saving the same annotations can overwrite "
                     "each other's work.\nOpen it anyway?" % message)
-                if answer != QMessageBox.StandardButton.Yes:
+                if not answer:
                     return
                 self.lock.acquire(folder, force=True)
                 lock_note = "lock overridden - close the other session"
@@ -1204,7 +1207,7 @@ class LabelImgWindow(QMainWindow):
         examples = []
         for _stem, names in sorted(clashes.items())[:3]:
             examples.append("  ·  ".join(names[:3]))
-        QMessageBox.warning(
+        messages.warn(
             self, "Two images would share one annotation file",
             "%d image name(s) appear more than once in this batch's sub-folders, "
             "and the annotations all go into one folder, so they would overwrite "
@@ -1537,11 +1540,11 @@ class LabelImgWindow(QMainWindow):
             self._status("Nothing to clear", "info")
             return
         if self.pref("confirm_clear_all", True):
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Clear every box",
                 "Remove all %d box(es) from this image?\n\nCtrl+Z brings them back."
                 % len(self.canvas.boxes))
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
         count = self.canvas.clear_all()
         self._status("%d box(es) cleared - Ctrl+Z brings them back" % count, "good")
@@ -1774,12 +1777,10 @@ class LabelImgWindow(QMainWindow):
             # so pressing the key again is not a dialog every time.
             if not self._ai_offered:
                 self._ai_offered = True
-                answer = QMessageBox.question(
+                answer = messages.ask(
                     self, "AI select",
-                    "%s\n\nDownload or choose a model now?" % why,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.Yes)
-                if answer == QMessageBox.StandardButton.Yes:
+                    "%s\n\nDownload or choose a model now?" % why)
+                if answer:
                     self.open_ai_model()
                     ok, _why = assistant.usable()
             if not ok:
@@ -1879,8 +1880,8 @@ class LabelImgWindow(QMainWindow):
             return True
         self._status(str(why).replace("\n", "  "), "warning")
         if not assistant.model_path():
-            answer = QMessageBox.question(self, "Auto-label", "%s\n\nChoose a YOLO model now?" % why)
-            if answer == QMessageBox.StandardButton.Yes:
+            answer = messages.ask(self, "Auto-label", "%s\n\nChoose a YOLO model now?" % why)
+            if answer:
                 self.open_yolo_model()
                 ok, _why = assistant.usable()
         return ok
@@ -1959,7 +1960,7 @@ class LabelImgWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         if not detector.names:
-            QMessageBox.warning(self, "Pre-label the folder",
+            messages.warn(self, "Pre-label the folder",
                                 "This model carries no class names, so its classes cannot be "
                                 "matched to yours.  Choose a names file in Tools → YOLO model….")
             return
@@ -1976,12 +1977,12 @@ class LabelImgWindow(QMainWindow):
         if not todo:
             self._status("Every image already has an annotation", "info")
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Pre-label the folder",
             "Run %s over the %d image(s) that have no annotation yet?\n\nImages that already have "
             "one are never touched, and nothing is written where the model finds nothing."
             % (os.path.basename(assistant.model_path()), len(todo)))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         self.ensure_classes(wanted)
         project = self.project()
@@ -2054,9 +2055,9 @@ class LabelImgWindow(QMainWindow):
         width, height = self.image_shape[1], self.image_shape[0]
         keep, notes = [], []
         for position, box in enumerate(self.canvas.boxes):
-            clean, messages = box.validated(width, height)
+            clean, problems = box.validated(width, height)
             if clean is None:
-                notes.append("box %d dropped (%s)" % (position + 1, "; ".join(messages)))
+                notes.append("box %d dropped (%s)" % (position + 1, "; ".join(problems)))
                 continue
             keep.append(clean)
         duplicates = find_duplicates(keep)
@@ -2065,15 +2066,13 @@ class LabelImgWindow(QMainWindow):
         self.ensure_classes(b.label for b in keep)
 
         if self.io.changed_externally(rel):
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "The annotation changed on disk",
                 "The annotation for %s has been modified since this session read it "
                 "- another session or another person may have written to it.\n\n"
                 "Overwrite it with what is on screen?\n\nThe version on disk is kept "
-                "in %s." % (rel, BACKUP_DIR),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+                "in %s." % (rel, BACKUP_DIR), default=False)
+            if not answer:
                 self._set_dirty(True)
                 self._status("Not saved - the file on disk is newer. Reload the "
                              "folder (F5) to see it.", "warning")
@@ -2150,11 +2149,11 @@ class LabelImgWindow(QMainWindow):
         if not self._writable_image():
             return
         if self.canvas.boxes:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Mark as background",
                 "This image has %d box(es).\n\nRemove them and save it as background?"
                 % len(self.canvas.boxes))
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
             self.canvas.clear_all()
         if not self._write_current(self.current_name()):
@@ -2193,11 +2192,11 @@ class LabelImgWindow(QMainWindow):
         if dialog.exec() != Dialog.DialogCode.Accepted:
             return
         if dialog.overwrite:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Replace existing annotations",
                 "Some of the chosen images already have an annotation.\n\nReplace "
                 "them? The current versions are kept in %s." % BACKUP_DIR)
-            if answer != QMessageBox.StandardButton.Yes:
+            if not answer:
                 return
         chosen = boxes if dialog.action == APPLY_BOXES else []
         self.ensure_classes(b.label for b in chosen)
@@ -2231,11 +2230,11 @@ class LabelImgWindow(QMainWindow):
         if self.read_only:
             self._status("This folder is open read-only", "warning")
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Move image out of the batch",
             "Move %s and its annotation into deleted_images?\n\nNothing is erased; "
             "move them back to restore them." % rel)
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         ok, message, _moved = move_to_deleted(self.io, rel)
         if not ok:
@@ -2273,11 +2272,11 @@ class LabelImgWindow(QMainWindow):
             self._status("There is no backup for this image yet", "warning")
             return
         summary = "%d box(es)" % len(result.boxes) if result.boxes else "a background decision"
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Restore from backup",
             "The backup holds %s for %s.\n\nReplace what is on screen with it? Nothing "
             "is written until you save or move on." % (summary, rel))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             return
         self.canvas.boxes = []
         if not self.canvas.add_boxes(result.boxes, "Restore from backup"):
@@ -2348,11 +2347,11 @@ class LabelImgWindow(QMainWindow):
         if rel not in self.image_files:
             self.draft.clear()
             return
-        answer = QMessageBox.question(
+        answer = messages.ask(
             self, "Unsaved work recovered",
             "Unsaved boxes for %s were left behind by an earlier session (%s).\n\n"
             "Restore them?" % (rel, pending.get("saved_at", "unknown")))
-        if answer != QMessageBox.StandardButton.Yes:
+        if not answer:
             self.draft.clear()
             return
         self.go_to_name(rel)
@@ -2701,13 +2700,11 @@ class LabelImgWindow(QMainWindow):
             self._report_exception(exc)
             committed = False
         if not committed or self.dirty:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Unsaved work",
                 "The last write did not complete, so this image is not on disk.\n\n"
-                "Leave anyway? A draft is kept and offered back when you return.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+                "Leave anyway? A draft is kept and offered back when you return.", default=False)
+            if not answer:
                 return False
         self._write_draft()
         return True
@@ -2724,13 +2721,11 @@ class LabelImgWindow(QMainWindow):
             self._report_exception(exc)
             committed = False
         if not committed or self.dirty:
-            answer = QMessageBox.question(
+            answer = messages.ask(
                 self, "Unsaved work",
                 "The last write did not complete, so this image is not on disk.\n\n"
-                "Close anyway? A draft is kept and offered back next time.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+                "Close anyway? A draft is kept and offered back next time.", default=False)
+            if not answer:
                 return False
         try:
             self._write_draft()

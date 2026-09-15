@@ -15,11 +15,12 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics,
+from PySide6.QtGui import (QBrush, QColor, QCursor, QFontMetrics,
                            QPainter, QPen, QPixmap, QPolygonF)
 
 from annotex.ui.viewport import ImageViewport
 
+from ....ui import design
 from ..config import (EDGE_TOLERANCE, MAX_POINTS_PER_POLY, MAX_POLYS_PER_IMAGE,
                       MIN_POINTS, SHAPE_CIRCLE, SHAPE_POLYGON, SHAPE_RECT,
                       VERTEX_RADIUS, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP)
@@ -109,9 +110,7 @@ class Canvas(ImageViewport):
         self.read_only = False
 
         self._colours = dict(CANVAS)
-        self._label_font = QFont()
-        self._label_font.setPointSizeF(max(8.0, self._label_font.pointSizeF()))
-        self._label_font.setBold(True)
+        self._label_font = design.font("label")
 
     # ══════════════════════════════════════════════════════
     # CONTENT
@@ -1096,7 +1095,7 @@ class Canvas(ImageViewport):
         return pen
 
     def _paint_shapes(self, painter) -> None:
-        font = QFont(self._label_font)
+        font = self._label_font
         painter.setFont(font)
         metrics = QFontMetrics(font)
 

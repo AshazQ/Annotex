@@ -15,9 +15,11 @@ import time
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFontMetrics
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-                               QMessageBox, QProgressBar, QPushButton, QScrollArea,
+                               QProgressBar, QPushButton, QScrollArea,
                                QToolButton, QVBoxLayout, QWidget)
 
+from . import design
+from .dialogs import messages
 from ..core.jobs import CANCELLED, DONE, FAILED, QUEUED, RUNNING, execute
 from . import icons
 from .widgets import section_label
@@ -139,15 +141,13 @@ class JobRow(QFrame):
         self.job = job
         self.setObjectName("Card")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 10, 8)
+        design.margins(layout, "s", "s", "s", "m")
         layout.setSpacing(4)
 
         top = QHBoxLayout()
         top.setSpacing(8)
         self.title = QLabel(job.title)
-        font = self.title.font()
-        font.setBold(True)
-        self.title.setFont(font)
+        self.title.setFont(design.font("emphasis", self.title.font()))
         top.addWidget(self.title, 1)
         self.state = QLabel("")
         top.addWidget(self.state)
@@ -218,14 +218,11 @@ class JobRow(QFrame):
         lines.extend(job.warnings[:40])
         if len(job.warnings) > 40:
             lines.append("… and %d more" % (len(job.warnings) - 40))
-        box = QMessageBox(self)
-        box.setWindowTitle(job.title)
-        box.setIcon(QMessageBox.Icon.Warning if job.state == FAILED else QMessageBox.Icon.Information)
-        box.setText(job.message)
-        box.setInformativeText("\n".join(lines)[:4000])
-        if job.detail:
-            box.setDetailedText(job.detail)
-        box.exec()
+        text = job.message
+        if lines:
+            text = "%s\n\n%s" % (text, "\n".join(lines)[:4000])
+        show = messages.warn if job.state == FAILED else messages.inform
+        show(self, job.title, text, detail=job.detail or "")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -265,7 +262,7 @@ class JobQueuePanel(QWidget):
         holder = QWidget()
         self.list_layout = QVBoxLayout(holder)
         self.list_layout.setContentsMargins(0, 0, 0, 0)
-        self.list_layout.setSpacing(6)
+        self.list_layout.setSpacing(design.SPACE["s"])
         self.empty = QLabel("Nothing queued yet. Jobs keep running while you use other tools.")
         self.empty.setObjectName("Hint")
         self.list_layout.addWidget(self.empty)
