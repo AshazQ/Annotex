@@ -897,11 +897,28 @@ class ShapeCanvas(ImageViewport):
         chosen = self.selected_shapes()
         if not chosen:
             return 0
+        # Select all, duplicate, repeat doubles the image every time.  The
+        # per-image limit holds here as it does everywhere else, or a held
+        # Ctrl+D leaves a file nobody can open again.
+        room = MAX_SHAPES_PER_IMAGE - len(self.shapes)
+        if room <= 0:
+            self.statusMessage.emit("This image already has the most shapes allowed "
+                                    "(%d)" % MAX_SHAPES_PER_IMAGE, "warning")
+            return 0
+        if len(chosen) > room:
+            self.statusMessage.emit("Only %d of the %d could be duplicated - this "
+                                    "image holds at most %d shapes"
+                                    % (room, len(chosen), MAX_SHAPES_PER_IMAGE),
+                                    "warning")
+            chosen = chosen[:room]
         width, height = self.image_size
         shift = max(8.0, min(width or 100, height or 100) * 0.02)
         start = len(self.shapes)
         for shape in chosen:
-            self.shapes.append(shape.translated(shift, shift, width, height))
+            copy = shape.translated(shift, shift, width, height)
+            copy.locked = False
+            copy.visible = True
+            self.shapes.append(copy)
         self.selection = set(range(start, len(self.shapes)))
         self.shapesChanged.emit("Duplicate shape")
         self.selectionChanged.emit()
@@ -1034,9 +1051,14 @@ class ShapeCanvas(ImageViewport):
         self._paint_marquee(painter)
         self._paint_crosshair(painter)
 
+    def _visible_rect(self) -> QRectF:
+        """The widget area, with room for a label chip just outside it."""
+        return QRectF(self.rect()).adjusted(-40, -40, 40, 40)
+
     def _paint_shapes(self, painter) -> None:
         painter.setFont(self._label_font)
         metrics = QFontMetrics(self._label_font)
+        view = self._visible_rect()
         selected_colour = qcolor(self._colours["selected"])
         for index, shape in enumerate(self.shapes):
             if not shape.visible:
@@ -1044,6 +1066,11 @@ class ShapeCanvas(ImageViewport):
             selected = index in self.selection
             colour = self.colour_for(shape)
             polygon = self._screen_outline(shape)
+            # An image can hold a thousand shapes; zoomed in, almost all of
+            # them are somewhere else.  Drawing those costs the frame rate
+            # and shows nobody anything.
+            if not view.intersects(polygon.boundingRect()):
+                continue
             pen = QPen(selected_colour if selected else colour,
                        self.line_width + (1 if selected else 0))
             pen.setCosmetic(True)

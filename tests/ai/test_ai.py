@@ -126,6 +126,19 @@ def main():
     mask, size, _score = runtime.predict(big, points=[(4000, 2500, True)], max_side=512)
     ok("a huge image is not answered pixel for pixel", size == (320, 512))
 
+    # ── an export that declares its inputs in another order ──
+    from fake_sam import build_decoder as _build_decoder
+    reordered = _build_decoder(os.path.join(models, "odd.decoder.onnx"),
+                               awkward_order=True)
+    odd = SamRuntime(encoder, reordered, "odd order")
+    odd.load()
+    ok("a flag input is not mistaken for the mask input",
+       odd._input("mask_input") == "mask_input"
+       and odd._input("has_mask_input") == "has_mask_input")
+    ok("and it still predicts",
+       odd.predict(odd.encode(np.full((40, 64, 3), 255, np.uint8), (250, 400)),
+                   points=[(20, 20, True)])[0].any())
+
     # ── an export with the normalisation inside it ────────
     uint8_encoder = build_encoder(os.path.join(models, "u8.encoder.onnx"),
                                   side=64, layout="nhwc", dtype="uint8")

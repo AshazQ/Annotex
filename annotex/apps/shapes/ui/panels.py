@@ -42,6 +42,7 @@ class ShapeListPanel(QWidget):
 
         self.list = QListWidget()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list.setUniformItemSizes(True)      # the list may hold hundreds
         self.list.setMinimumHeight(120)
         self.list.setIconSize(QSize(16, 16))
         self.list.itemSelectionChanged.connect(self._emit_selection)
@@ -89,22 +90,42 @@ class ShapeListPanel(QWidget):
         self._rebuild(selection)
 
     def selected_rows(self):
-        return sorted(self.list.row(item) for item in self.list.selectedItems())
+        """Every selected row.
+
+        The row is read back off the item rather than looked up with
+        QListWidget.row(), which walks the list: with a few hundred shapes
+        selected that turns one selection change into a visible pause."""
+        rows = []
+        for item in self.list.selectedItems():
+            row = item.data(Qt.ItemDataRole.UserRole)
+            rows.append(self.list.row(item) if row is None else int(row))
+        return sorted(rows)
 
     def set_selection(self, indices) -> None:
         self._updating = True
+        blocked = self.list.blockSignals(True)
+        self.list.setUpdatesEnabled(False)
         try:
             wanted = set(indices)
             for row in range(self.list.count()):
-                self.list.item(row).setSelected(row in wanted)
+                item = self.list.item(row)
+                if item is not None:
+                    item.setSelected(row in wanted)
             if wanted:
-                self.list.scrollToItem(self.list.item(min(wanted)))
+                first = self.list.item(min(wanted))
+                if first is not None:
+                    self.list.scrollToItem(first)
         finally:
+            self.list.setUpdatesEnabled(True)
+            self.list.blockSignals(blocked)
             self._updating = False
         self._sync_buttons()
 
     def _rebuild(self, selection) -> None:
         self._updating = True
+        wanted = set(selection or ())
+        blocked = self.list.blockSignals(True)
+        self.list.setUpdatesEnabled(False)
         try:
             self.list.clear()
             for index, shape in enumerate(self._shapes):
@@ -117,11 +138,15 @@ class ShapeListPanel(QWidget):
                 text = "%s   ·   %s  %s%s" % (shape.label or "no class", shape.kind_label,
                                               shape.describe(),
                                               ("   (%s)" % ", ".join(flags)) if flags else "")
-                item = QListWidgetItem(icons.icon(KIND_ICONS.get(shape.kind, "polygon"), colour, 16), text)
+                item = QListWidgetItem(icons.icon(KIND_ICONS.get(shape.kind, "polygon"),
+                                                  colour, 16), text)
                 item.setToolTip("Shape %d  ·  double-click to change the class" % (index + 1))
+                item.setData(Qt.ItemDataRole.UserRole, index)
                 self.list.addItem(item)
-                item.setSelected(index in set(selection))
+                item.setSelected(index in wanted)
         finally:
+            self.list.setUpdatesEnabled(True)
+            self.list.blockSignals(blocked)
             self._updating = False
         count = len(self._shapes)
         self.count_label.setText(str(count))

@@ -309,7 +309,11 @@ class SamRuntime:
         self.long_side = side or DEFAULT_LONG_SIDE
         return {"name": spec.name, "layout": layout, "float": floating,
                 # A uint8 export carries SAM's normalisation inside the graph.
-                "normalise": floating, "pad": layout in ("nchw", "nhwc", "hwc") and bool(side)}
+                "normalise": floating,
+                # SAM's own preprocessing pads the resized image out to a
+                # square, and the decoder's postprocessing undoes exactly that
+                # - so pad whether or not the graph declares a fixed size.
+                "pad": layout in ("nchw", "nhwc", "hwc")}
 
     def _check_decoder(self) -> None:
         names = set(self._decoder_inputs)
@@ -320,8 +324,17 @@ class SamRuntime:
             raise SamError("the decoder takes no point prompts - it is not a SAM decoder")
 
     def _input(self, *wanted):
-        for name in self._decoder_inputs:
-            for want in wanted:
+        """The decoder input that means this, by name.
+
+        An exact name wins over a partial one, and the terms are tried in the
+        order given - otherwise "mask_input" happily matches
+        "has_mask_input", and a mask goes where a flag belongs."""
+        names = list(self._decoder_inputs)
+        for want in wanted:
+            if want in names:
+                return want
+        for want in wanted:
+            for name in names:
                 if want in name:
                     return name
         return ""
@@ -427,9 +440,11 @@ class SamRuntime:
         feed[self._input("point_coords")] = np.array([coords], dtype=np.float32)
         feed[self._input("point_labels")] = np.array([labels], dtype=np.float32)
         mask_input = self._input("mask_input")
+        has_mask = self._input("has_mask_input")
+        if mask_input == has_mask:
+            mask_input = ""               # only one of them is really there
         if mask_input:
             feed[mask_input] = np.zeros((1, 1, LOW_RES, LOW_RES), dtype=np.float32)
-        has_mask = self._input("has_mask_input")
         if has_mask:
             feed[has_mask] = np.zeros(1, dtype=np.float32)
         size_input = self._input("orig_im_size", "orig_size")

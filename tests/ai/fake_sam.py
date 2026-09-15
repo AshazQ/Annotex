@@ -54,10 +54,12 @@ def build_encoder(path, side=64, layout="nchw", dtype="float32"):
     return path
 
 
-def build_decoder(path):
-    """Inputs and outputs of the reference export.  The mask it returns is a
-    filled rectangle around the prompt points, which is enough for a test to
-    prove the prompt reached the model in the right coordinate frame."""
+def build_decoder(path, awkward_order=False):
+    """Inputs and outputs of the reference export.
+
+    `awkward_order` declares the inputs in a different order - real exports
+    do - which is enough to catch a driver that matches input names by
+    substring and puts a mask where a flag belongs."""
     import numpy as np
     import onnx
     from onnx import TensorProto, helper, numpy_helper
@@ -103,6 +105,8 @@ def build_decoder(path):
         helper.make_node("Mul", ["ones", "sign"], ["masks"]),
         helper.make_node("Identity", ["iou"], ["iou_predictions"]),
     ]
+    if awkward_order:
+        inputs = list(reversed(inputs))
     graph = helper.make_graph(nodes, "fake_sam_decoder", inputs, outputs, consts)
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)])
     model.ir_version = 9

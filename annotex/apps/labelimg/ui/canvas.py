@@ -806,10 +806,24 @@ class BoxCanvas(ImageViewport):
         if not self.selection:
             self.statusMessage.emit("Select a box first", "warning")
             return 0
+        chosen = self.selected_boxes()
+        # Select all, duplicate, repeat doubles the image every time.  The
+        # per-image limit holds here as it does everywhere else.
+        room = MAX_BOXES_PER_IMAGE - len(self.boxes)
+        if room <= 0:
+            self.statusMessage.emit("This image already has %d boxes, which is the "
+                                    "limit" % MAX_BOXES_PER_IMAGE, "warning")
+            return 0
+        if len(chosen) > room:
+            self.statusMessage.emit("Only %d of the %d could be duplicated - this "
+                                    "image holds at most %d boxes"
+                                    % (room, len(chosen), MAX_BOXES_PER_IMAGE),
+                                    "warning")
+            chosen = chosen[:room]
         w, h = self.image_size
         shift = max(8, int(round(min(w or 100, h or 100) * 0.02)))
         added = []
-        for box in self.selected_boxes():
+        for box in chosen:
             copy = box.translated(shift, shift, w, h)
             copy.locked = False
             copy.visible = True
@@ -941,14 +955,19 @@ class BoxCanvas(ImageViewport):
     def _paint_boxes(self, painter) -> None:
         painter.setFont(self._label_font)
         metrics = QFontMetrics(self._label_font)
+        # Zoomed in on a crowded image most boxes are off screen; drawing
+        # them costs the frame rate and shows nobody anything.
+        view = QRectF(self.rect()).adjusted(-40, -40, 40, 40)
         chips = []
         for index, box in enumerate(self.boxes):
             if not box.visible:
                 continue
+            rect = self._box_rect(box)
+            if not view.intersects(rect):
+                continue
             colour = qcolor(self._colour_for(box.label) or CANVAS["shape"])
             selected = index in self.selection
             hovered = index == self._hover_index
-            rect = self._box_rect(box)
 
             shadow = QPen(QColor(0, 0, 0, 120), self.line_width + 2)
             shadow.setCosmetic(True)
