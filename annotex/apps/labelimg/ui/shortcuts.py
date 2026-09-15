@@ -46,6 +46,9 @@ ACTIONS = [
      "Drag out a new box - hold Ctrl for a square"),
     ("tool_pan", "Pan tool", "H", "Tools", "hand",
      "Drag the image around (or drag with the middle button)"),
+    ("tool_ai", "AI select (SAM)", "S", "Tools", "magic",
+     "Click the object and the model proposes the box - right-click or "
+     "Shift+click to exclude something, Enter keeps it"),
     ("cancel", "Cancel / deselect", "Escape", "Tools", "cross", ""),
 
     # ── editing ───────────────────────────────────────────
@@ -65,10 +68,18 @@ ACTIONS = [
      "A locked box cannot be moved or resized by accident"),
     ("hide_box", "Hide or show selection", "", "Edit", "eye",
      "Hidden boxes are still saved; they are just out of the way"),
-    ("copy_previous", "Replace with the previous image's boxes", "Ctrl+V",
+    ("copy_boxes", "Copy the selected boxes", "Ctrl+C", "Edit", "copy",
+     "Copy the selected boxes (all of them when nothing is selected) so they "
+     "can be pasted onto another image"),
+    ("cut_boxes", "Cut the selected boxes", "Ctrl+X", "Edit", "copy",
+     "Copy the selection and remove it from this image"),
+    ("paste_boxes", "Paste copied boxes", "Ctrl+V", "Edit", "paste",
+     "Paste what was copied onto this image - from another image, or from "
+     "LabelImg Shapes"),
+    ("copy_previous", "Replace with the previous image's boxes", "Ctrl+Shift+V",
      "Edit", "layers", "Copy the previous frame's annotation over this one"),
     ("append_previous", "Add every box from the previous image",
-     "Ctrl+Shift+V", "Edit", "layers",
+     "Ctrl+Alt+V", "Edit", "layers",
      "Append the previous frame's boxes to what is already here"),
     ("apply_to_images", "Apply these boxes to other images…", "Ctrl+Shift+A",
      "Edit", "grid", "Write the current boxes onto a set of images in one step"),
@@ -135,7 +146,8 @@ ACTIONS = [
      "Progress, class balance and throughput for this batch"),
     ("open_report", "Write and open the HTML report", "F8", "Windows",
      "report", ""),
-    ("history_log", "Change history", "F9", "Windows", "history", ""),
+    ("ai_model", "AI model (SAM)…", "", "Windows", "magic",
+     "Point the AI tool at a Segment Anything encoder and decoder"),
     ("settings", "Settings…", "", "Windows", "settings", ""),
     ("shortcuts_sheet", "Keyboard shortcuts", "?", "Windows", "keyboard", ""),
     ("command_palette", "Command palette", "Ctrl+K", "Windows", "command", ""),
@@ -179,3 +191,8 @@ def resolve(overrides) -> dict:
 
 def label(action_id: str) -> str:
     return _shared.label(ACTIONS, action_id)
+
+
+def steals_from_text_field(event, focus, text_types) -> bool:
+    """A focused text field keeps Ctrl+C, Ctrl+V, Ctrl+A and friends."""
+    return _shared.steals_from_text_field(event, focus, text_types)

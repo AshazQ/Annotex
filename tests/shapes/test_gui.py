@@ -238,6 +238,39 @@ try:
     ok("nothing to save after reopening", not w.is_dirty())
     ok("history starts fresh", w.history.depth() == (0, 0))
 
+    # ── copying chosen shapes onto another image ──────────
+    from annotex.core import clipboard
+    clipboard.clear()
+    ok("paste is off until something is copied", not w.act("paste_shapes").isEnabled())
+    canvas.select_indices([0])
+    wanted = canvas.shapes[0].to_dict()
+    w.copy_shapes()
+    ok("Ctrl+C copies only the selected shape", clipboard.count() == 1)
+    ok("paste turns on once something is copied", w.act("paste_shapes").isEnabled())
+    w.go_to_index(1)
+    settle()
+    before = len(canvas.shapes)
+    w.paste_shapes()
+    ok("Ctrl+V pastes it onto the next image", len(canvas.shapes) == before + 1)
+    ok("the pasted shape is identical", canvas.shapes[-1].to_dict() == wanted)
+    w.undo()
+    ok("undo takes the paste back", len(canvas.shapes) == before)
+
+    w.copy_previous()
+    ok("the previous image's shapes can be added in one step",
+       len(canvas.shapes) == before + len(drawn))
+    w.undo()
+
+    clipboard.copy(clipboard.KIND_BOXES,
+                   [{"label": "crate", "bounds": [10, 10, 110, 60]}], (800, 600), "x.jpg")
+    w.paste_shapes()
+    ok("a box copied in LabelImg Master pastes as an oriented box",
+       canvas.shapes[-1].kind == KIND_OBB and round(canvas.shapes[-1].w) == 100)
+    w.undo()
+    clipboard.clear()
+    w.go_to_index(0)
+    settle()
+
     # ── exports ───────────────────────────────────────────
     seg = w.export_with(TASK_SEGMENT, 24, True)
     lines = open(os.path.join(folder, EXPORT_YOLO_SEG, "labels", "shop_1.txt")).read().splitlines()

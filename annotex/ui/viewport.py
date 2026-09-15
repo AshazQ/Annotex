@@ -33,6 +33,28 @@ def _clamp(value, low, high):
     return low if value < low else (high if value > high else value)
 
 
+_PAINT_FAULTS = set()
+
+
+def report_paint_fault(where: str) -> None:
+    """A fault while drawing is written to the console once and then swallowed.
+
+    A repaint happens many times a second; letting one bad frame raise would
+    either bury the screen in dialogs or, on some Qt builds, end the process.
+    Neither is acceptable when somebody is halfway through a batch."""
+    import traceback
+    text = traceback.format_exc()
+    key = "%s|%s" % (where, text.strip().splitlines()[-1] if text else "")
+    if key in _PAINT_FAULTS:
+        return
+    _PAINT_FAULTS.add(key)
+    try:
+        import sys
+        sys.stderr.write("%s could not be drawn completely:\n%s" % (where, text))
+    except Exception:
+        pass
+
+
 class ImageViewport(QWidget):
     """A zoomable, pannable image.  Subclass it to add shapes."""
 

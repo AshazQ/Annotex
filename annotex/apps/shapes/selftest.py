@@ -170,8 +170,53 @@ def run_selftest(verbose: bool = True) -> int:
         check("rename rewrites the files", rename_label(folder, rels, "human", "person"), 1)
         check("renamed on disk", sorted({s.label for s in read_annotation(folder, "a.jpg").shapes}),
               ["coke", "cookies", "person"])
+
+        # ── no activity log is written beside the images ──
+        written = set()
+        for root, _dirs, files in os.walk(folder):
+            written.update(os.path.splitext(name)[1].lower() for name in files)
+        check("no .csv or log file is written for the batch",
+              sorted(e for e in written if e in (".csv", ".log", ".jsonl")), [])
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
+    # ── the annotation clipboard ──────────────────────────
+    from annotex.core import clipboard
+    clipboard.set_bridge(None, None)
+    clipboard.clear()
+    check("an empty clipboard pastes nothing", clipboard.count(), 0)
+    sample = Shape.circle("ball", 100, 50, 20)
+    item = sample.to_dict()
+    item["bounds"] = list(sample.bounds)
+    clipboard.copy(clipboard.KIND_SHAPES, [item], (200, 100), "a.jpg")
+    check("one shape on the clipboard", clipboard.count(), 1)
+    payload = clipboard.content()
+    same, fx, fy = payload.scale_to((200, 100))
+    check("the same size needs no scaling", (fx, fy), (1.0, 1.0))
+    bigger, fx, fy = payload.scale_to((400, 200))
+    check("a bigger image scales the copy", (fx, fy), (2.0, 2.0))
+    near("the scaled circle keeps its place", bigger[0]["cx"], 200)
+    near("the scaled circle keeps its size", bigger[0]["r"], 40)
+    restored = Shape.from_dict(bigger[0])
+    check("a scaled clipboard shape reads back", restored.kind, KIND_CIRCLE)
+    check("clipboard text survives a round trip",
+          clipboard.Payload.from_json(payload.to_json()).items, payload.items)
+    check("rubbish on the system clipboard is ignored",
+          clipboard.Payload.from_json("not our json"), None)
+    clipboard.clear()
+
+    # ── a predicted mask becomes an editable outline ──────
+    from annotex.core.ai import masks
+    grid = [[1 if (8 <= x <= 40 and 6 <= y <= 30) else 0 for x in range(50)]
+            for y in range(40)]
+    check("a mask becomes a box", masks.mask_to_box(grid), (8.0, 6.0, 41.0, 31.0))
+    outline = masks.mask_to_polygon(grid, tolerance=0.8)
+    check("a rectangular mask traces to four corners", len(outline), 4)
+    check("an empty mask traces to nothing", masks.mask_to_polygon([[0, 0], [0, 0]]), [])
+    check("a mask with two blobs keeps the bigger one",
+          masks.mask_to_box([[1, 0, 0, 0, 0],
+                             [0, 0, 1, 1, 1],
+                             [0, 0, 1, 1, 1]], min_area=2), (2.0, 1.0, 5.0, 3.0))
 
     if verbose:
         print("=" * 66)

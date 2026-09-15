@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QLabel, QMessageBox,
-                               QSlider, QSpinBox, QTabWidget, QVBoxLayout,
-                               QWidget)
+                               QPushButton, QSlider, QSpinBox, QTabWidget,
+                               QVBoxLayout, QWidget)
 
 from annotex.ui.dialogs.common import Dialog, card, hint, row
 from annotex.ui.theme_picker import ThemeCombo
@@ -29,6 +29,7 @@ class SettingsDialog(Dialog):
         self.tabs.addTab(self._appearance_tab(), "Appearance")
         self.tabs.addTab(self._workflow_tab(), "Workflow")
         self.tabs.addTab(self._drawing_tab(), "Drawing")
+        self.tabs.addTab(self._ai_tab(), "AI")
         self.keys = KeyBindingsEditor(sc.ACTIONS, settings.get("shortcuts", {}),
                                       sc.RESERVED)
         self.tabs.addTab(self.keys, "Shortcuts")
@@ -129,13 +130,62 @@ class SettingsDialog(Dialog):
         layout.addStretch(1)
         return page
 
+    def _ai_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(12)
+        frame, inner = card("Segment Anything")
+        self.model_label = QLabel("")
+        self.model_label.setWordWrap(True)
+        inner.addWidget(self.model_label)
+        choose = QPushButton("Choose the model…")
+        choose.clicked.connect(self._choose_model)
+        inner.addWidget(row(choose, None))
+        inner.addWidget(hint("Press S for the AI tool, click the object, and the box "
+                             "is proposed.  Right-click or Shift+click excludes part of "
+                             "it; drag a rough box to narrow it down; Enter keeps the "
+                             "proposal.  The model runs on this machine - nothing is "
+                             "uploaded."))
+        layout.addWidget(frame)
+        frame2, inner2 = card("Behaviour")
+        self.ai_keep = self._check("Keep the clicks after a box is added",
+                                   "ai_keep_prompt")
+        inner2.addWidget(self.ai_keep)
+        layout.addWidget(frame2)
+        layout.addStretch(1)
+        self._refresh_model_label()
+        return page
+
+    def _refresh_model_label(self) -> None:
+        import os
+        encoder = str(self.settings.get("sam_encoder", "") or "")
+        decoder = str(self.settings.get("sam_decoder", "") or "")
+        if encoder and decoder:
+            self.model_label.setText("Model:  %s  +  %s" % (os.path.basename(encoder),
+                                                            os.path.basename(decoder)))
+            self.model_label.setToolTip("%s\n%s" % (encoder, decoder))
+        else:
+            self.model_label.setText("No model chosen yet - the AI tool is off.")
+            self.model_label.setToolTip("")
+
+    def _choose_model(self) -> None:
+        window = self.parent()
+        if window is not None and hasattr(window, "open_ai_model"):
+            window.open_ai_model()
+        else:                                         # pragma: no cover
+            QMessageBox.information(self, "AI model",
+                                    "Open this from the tool's Settings button.")
+        self._refresh_model_label()
+
     def _restore(self) -> None:
         answer = QMessageBox.question(self, "Restore defaults",
                                       "Reset every setting on every tab to its default?")
         if answer != QMessageBox.StandardButton.Yes:
             return
         self._result = dict(DEFAULT_SETTINGS)
-        for key in ("recent_folders", "last_class", "class_project"):
+        # The chosen AI model is not a preference to throw away with the rest.
+        for key in ("recent_folders", "last_class", "class_project",
+                    "sam_encoder", "sam_decoder"):
             self._result[key] = self.settings.get(key)
         self._result["first_run_done"] = True
         self.accept()
@@ -158,6 +208,7 @@ class SettingsDialog(Dialog):
             "snap_to_edges": self.snap_edges.isChecked(),
             "snap_to_boxes": self.snap_boxes.isChecked(),
             "draw_square": self.square.isChecked(),
+            "ai_keep_prompt": self.ai_keep.isChecked(),
             "shortcuts": self.keys.overrides(),
         }
         self.accept()

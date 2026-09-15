@@ -86,6 +86,8 @@ _BODY = {
     "shapes": '<path d="M3.5 10.5 8 3.5l4.5 7Z"/><circle cx="17" cy="7" r="3.5"/><path d="M5.3 14.4 12.3 13.2 13.5 20.2 6.5 21.4Z"/><ellipse cx="18" cy="17.5" rx="3" ry="4"/>',
     "arrow_right": '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
     "image_copy": '<rect x="7.5" y="7.5" width="13" height="12" rx="2"/><path d="M16.5 7.5V6a2 2 0 0 0-2-2h-9a2 2 0 0 0-2 2v8.5a2 2 0 0 0 2 2h2"/><path d="M20.5 16.5 16.5 12.5 10 19.5"/>',
+    "magic": '<path d="M4 20 15 9"/><path d="M13.5 7.5 16.5 10.5"/><path d="M18 3v3M21.5 4.5 19 7M21 9.5h-3"/><path d="M6.5 3.5 7.5 6l2.5 1-2.5 1-1 2.5-1-2.5L3 7l2.5-1Z"/>',
+    "paste": '<rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1Z"/><path d="M9 12h6M9 16h4"/>',
     "background": '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 16.5 17 7.5"/>',
 }
 

@@ -245,6 +245,43 @@ try:
     w.undo()
     ok("undo the append", len(c.boxes) == count)
 
+    # ── copying chosen boxes onto another image ───────────────
+    from annotex.core import clipboard
+    clipboard.clear()
+    ok("nothing is on the clipboard to begin with", clipboard.count() == 0)
+    ok("paste is off until something is copied", not w.act("paste_boxes").isEnabled())
+    c.selection = {0}
+    wanted = c.boxes[0].copy()
+    w.copy_boxes()
+    ok("Ctrl+C copies only the selected box", clipboard.count() == 1)
+    ok("paste turns on once something is copied", w.act("paste_boxes").isEnabled())
+    w.go_to_index(4)
+    before = len(c.boxes)
+    w.paste_boxes()
+    ok("Ctrl+V pastes it onto the next image", len(c.boxes) == before + 1)
+    pasted = c.boxes[-1]
+    ok("the pasted box keeps its class", pasted.label == wanted.label)
+    ok("the pasted box keeps its place",
+       pasted.same_geometry(wanted, 1.0))
+    ok("the pasted box is selected, ready to move", c.selection == {len(c.boxes) - 1})
+    w.undo()
+    ok("undo takes the paste back", len(c.boxes) == before)
+
+    c.selection = set()
+    c.add_box(Box("person", 5, 5, 40, 40))
+    everything = len(c.boxes)
+    w.copy_boxes()
+    ok("copying with nothing selected copies the whole image",
+       clipboard.count() == everything)
+    w.copy_boxes(cut=True)
+    ok("cut empties the image", not c.boxes)
+    w.paste_boxes()
+    ok("and paste puts it all back", len(c.boxes) == everything)
+    while c.boxes:
+        c.select_all()
+        w.delete_boxes()
+    clipboard.clear()
+
     # ── background, and leaving commits ───────────────────────
     w.go_to_index(2)
     w.mark_background()
@@ -434,7 +471,7 @@ try:
     from annotex.apps.labelimg.ui import shortcuts as sc
     for dialog in (ClassManagerDialog(w, store, w.annotation_dirs()),
                    SettingsDialog(w, settings),
-                   DashboardDialog(w, w._stats(), w._session(), w.theme),
+                   DashboardDialog(w, w._stats(), w.theme),
                    CommandPalette(w, sc.ACTIONS, w.keys, {}, w.theme),
                    ShortcutSheet(w, sc.ACTIONS, w.keys, w.theme, sc.MOUSE_HINT, sc.FIXED),
                    WelcomeDialog(w, w.theme), AboutDialog(w, [("Version", "x")], w.theme),

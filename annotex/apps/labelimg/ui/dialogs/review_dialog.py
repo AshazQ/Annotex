@@ -256,7 +256,7 @@ class DashboardDialog(Dialog):
 
     reportRequested = Signal()
 
-    def __init__(self, parent, stats, session=None, theme=None):
+    def __init__(self, parent, stats, theme=None):
         super().__init__(parent, "Summary dashboard",
                          "Where this batch stands right now.", width=900, height=640)
         totals = stats["totals"]
@@ -266,9 +266,6 @@ class DashboardDialog(Dialog):
         entries = [("Images", totals["images"]), ("Labelled", totals["labelled"]),
                    ("Background", totals["background"]), ("Remaining", totals["remaining"]),
                    ("Boxes", totals["boxes"]), ("Verified", totals["verified"])]
-        if session:
-            entries.append(("Session", session.get("elapsed", "-")))
-            entries.append(("Images / hour", "%.0f" % float(session.get("per_hour", 0.0))))
         for column, (label, value) in enumerate(entries):
             value_label = QLabel(str(value))
             value_label.setObjectName("StatValue")

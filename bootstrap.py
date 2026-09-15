@@ -11,6 +11,7 @@ shortcut.  Standard library only, so it runs on a bare Python.
     python bootstrap.py --upgrade       re-install / update the dependencies
     python bootstrap.py --system        install into the current environment
     python bootstrap.py --offline DIR   install from a folder of wheels
+    python bootstrap.py --ai            also install the optional AI extras
 
 Nothing outside this folder is touched, except the desktop shortcut you ask
 for.  No administrator rights are needed.
@@ -263,7 +264,9 @@ def main(argv=None) -> int:
     parser.add_argument("--no-selftest", action="store_true",
                         help="skip the offline verification step")
     parser.add_argument("--ai", action="store_true",
-                        help="also install onnxruntime for AI sorting in the Image Sorter")
+                        help="also install onnxruntime and numpy, for the AI select "
+                             "tool in the labelling tools and AI sorting in the "
+                             "Image Sorter")
     args = parser.parse_args(argv)
 
     rule()
@@ -283,7 +286,7 @@ def main(argv=None) -> int:
     if not pip_install(python, ["%s%s" % (n, s) for n, s, _w in REQUIREMENTS], args.offline):
         return 2
     if args.ai and not pip_install(python, AI_PACKAGES, args.offline):
-        say("AI sorting could not be installed; everything else works", "warn")
+        say("the AI extras could not be installed; everything else works", "warn")
     if not verify(python):
         say("Something is still missing. Try:  python bootstrap.py --upgrade", "fail")
         return 2

@@ -76,7 +76,7 @@ def build_stats(index, rels, project=None, folder=""):
     return {"totals": totals, "images": images, "classes": classes}
 
 
-def render_html(stats, session=None) -> str:
+def render_html(stats) -> str:
     totals = stats["totals"]
     folder = totals.get("folder", "")
     name = os.path.basename(str(folder).rstrip(os.sep)) or "batch"
@@ -134,12 +134,6 @@ def render_html(stats, session=None) -> str:
     body = [("<div class='tiles'>%s</div>" % tiles),
             hr.section("Batch progress", progress),
             hr.section("Boxes per class", chart)]
-    if session:
-        body.append(hr.section("This session", hr.chips([
-            (session.get("elapsed", "-"), "active time"),
-            (int(session.get("images", 0)), "images handled"),
-            ("%.0f" % float(session.get("per_hour", 0.0)), "images / hour"),
-            (int(session.get("shapes", 0)), "boxes saved")])))
     body.append(hr.section("Class balance", class_table))
     body.append(hr.section("Every image", image_table))
 
@@ -152,11 +146,11 @@ def render_html(stats, session=None) -> str:
                    "Every figure above is also present in %s." % SUMMARY_NAME)
 
 
-def write_report(stats, folder, session=None, filename=REPORT_NAME):
+def write_report(stats, folder, filename=REPORT_NAME):
     report = WriteReport()
     path = os.path.join(str(folder), filename)
     try:
-        page = render_html(stats, session)
+        page = render_html(stats)
     except Exception as exc:                          # pragma: no cover
         report.errors.append("could not build the report: %s" % exc)
         return report

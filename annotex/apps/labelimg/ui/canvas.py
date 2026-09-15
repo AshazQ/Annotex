@@ -18,7 +18,7 @@ from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics,
 from PySide6.QtWidgets import QApplication
 
 from annotex.ui.palette import CANVAS, qcolor, readable_on
-from annotex.ui.viewport import ImageViewport
+from annotex.ui.viewport import ImageViewport, report_paint_fault
 
 from ..config import HANDLE_SIZE, MAX_BOXES_PER_IMAGE, MIN_BOX_SIDE, SNAP_PIXELS
 from ..core.model import Box
@@ -26,12 +26,17 @@ from ..core.model import Box
 T_SELECT = "select"
 T_BOX = "box"
 T_PAN = "pan"
+T_AI = "ai"
 
 TOOL_CURSORS = {
     T_SELECT: Qt.CursorShape.ArrowCursor,
     T_BOX: Qt.CursorShape.CrossCursor,
     T_PAN: Qt.CursorShape.OpenHandCursor,
+    T_AI: Qt.CursorShape.PointingHandCursor,
 }
+
+# A click prompt and a drag prompt are told apart by this, in screen pixels.
+AI_DRAG_PIXELS = 6.0
 
 D_NONE = ""
 D_PAN = "pan"
@@ -39,6 +44,7 @@ D_MOVE = "move"
 D_RESIZE = "resize"
 D_MARQUEE = "marquee"
 D_NEW = "new"
+D_AI = "ai"
 
 HANDLE_CURSORS = {"nw": Qt.CursorShape.SizeFDiagCursor,
                   "se": Qt.CursorShape.SizeFDiagCursor,
@@ -61,6 +67,8 @@ class BoxCanvas(ImageViewport):
     editLabelRequested = Signal(int)
     contextMenuRequested = Signal(object)    # global QPoint
     toolFinished = Signal(str)
+    aiPromptChanged = Signal()               # the AI prompt was added to
+    aiAccepted = Signal()                    # Enter / double-click on a proposal
 
     clamp_inclusive = True
     placeholder_text = "Open a folder of images to begin  ·  Ctrl+U"
@@ -83,6 +91,14 @@ class BoxCanvas(ImageViewport):
         self._hover_index = -1
         self._hover_handle = ""
         self._snapped = False
+
+        # AI (SAM) prompting
+        self.ai_points = []                  # [(x, y, positive)] in image px
+        self.ai_box = None                   # (x0, y0, x1, y1) in image px
+        self.ai_preview = None               # proposed Box, not yet accepted
+        self.ai_busy = False
+        self._ai_anchor = None
+        self._ai_negative = False
 
         # options
         self.show_crosshair = True
@@ -125,6 +141,7 @@ class BoxCanvas(ImageViewport):
     def load_image(self, pixmap, boxes=None) -> None:
         self.boxes = [box.copy() for box in (boxes or [])]
         self.selection.clear()
+        self.clear_ai(quiet=True)
         self._cancel_interaction()
         self.set_pixmap(pixmap)
         self.selectionChanged.emit()
@@ -155,8 +172,10 @@ class BoxCanvas(ImageViewport):
             self._new = None
             if self._drag == D_NEW:
                 self._drag = D_NONE
+            if T_AI in (tool, self.tool):
+                self.clear_ai(quiet=True)
         self.tool = tool
-        if tool == T_BOX:
+        if tool in (T_BOX, T_AI):
             self.clear_selection()
         self.setCursor(QCursor(TOOL_CURSORS[tool]))
         self.update()
@@ -326,6 +345,10 @@ class BoxCanvas(ImageViewport):
             self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
             return
 
+        if self.tool == T_AI:
+            self._ai_press(pos, button, mods)
+            return
+
         if button == Qt.MouseButton.RightButton:
             if self._new is not None:
                 self._cancel_interaction()
@@ -410,6 +433,18 @@ class BoxCanvas(ImageViewport):
             self.update()
             return
 
+        if self._drag == D_AI:
+            if self._ai_anchor is not None:
+                moved = (pos - self._drag_origin)
+                if abs(moved.x()) > AI_DRAG_PIXELS or abs(moved.y()) > AI_DRAG_PIXELS:
+                    self._drag_moved = True
+                current = self.to_image(pos)
+                self._marquee = QRectF(self.to_widget(self._ai_anchor.x(),
+                                                      self._ai_anchor.y()),
+                                       self.to_widget(current.x(), current.y())).normalized()
+                self.update()
+            return
+
         if self._drag == D_MARQUEE:
             self._marquee = QRectF(self._drag_origin, pos).normalized()
             self._drag_moved = True
@@ -438,6 +473,9 @@ class BoxCanvas(ImageViewport):
         if drag == D_NEW:
             self._commit_new()
             return
+        if drag == D_AI:
+            self._ai_release(QPointF(event.position()))
+            return
         if drag == D_MARQUEE:
             self._commit_marquee(event.modifiers())
             return
@@ -453,7 +491,13 @@ class BoxCanvas(ImageViewport):
         self._drag = D_NONE
 
     def mouseDoubleClickEvent(self, event):
-        if not self.has_image() or self.tool != T_SELECT:
+        if not self.has_image():
+            return
+        if self.tool == T_AI:
+            if self.ai_preview is not None:
+                self.aiAccepted.emit()
+            return
+        if self.tool != T_SELECT:
             return
         index = self._box_at(QPointF(event.position()))
         if index >= 0:
@@ -601,7 +645,12 @@ class BoxCanvas(ImageViewport):
         self._hover_handle = ""
 
     def cancel(self) -> bool:
-        """Escape: drop a box being drawn, else the selection."""
+        """Escape: drop an AI prompt, then a box being drawn, then the
+        selection - the most recent thing first, every time."""
+        if self.ai_points or self.ai_box or self.ai_preview is not None:
+            self.clear_ai()
+            self.statusMessage.emit("AI prompt cleared", "info")
+            return True
         if self._new is not None:
             self._cancel_interaction()
             self.statusMessage.emit("Box discarded", "info")
@@ -611,6 +660,96 @@ class BoxCanvas(ImageViewport):
             self.clear_selection()
             return True
         return False
+
+    # ══════════════════════════════════════════════════════
+    # AI PROMPTING  (Segment Anything)
+    # ══════════════════════════════════════════════════════
+    def _ai_press(self, pos, button, mods) -> None:
+        if self.read_only:
+            self.statusMessage.emit("Read-only batch - the AI tool cannot add boxes",
+                                    "warning")
+            return
+        if button == Qt.MouseButton.RightButton:
+            self._add_ai_point(self.to_image(pos), positive=False)
+            return
+        if button != Qt.MouseButton.LeftButton:
+            return
+        self._drag = D_AI
+        self._drag_origin = QPointF(pos)
+        self._drag_moved = False
+        self._ai_anchor = self.to_image(pos)
+        self._ai_negative = bool(mods & (Qt.KeyboardModifier.ShiftModifier
+                                         | Qt.KeyboardModifier.ControlModifier))
+
+    def _ai_release(self, pos) -> None:
+        anchor, moved = self._ai_anchor, self._drag_moved
+        negative = self._ai_negative
+        self._drag = D_NONE
+        self._ai_anchor = None
+        self._marquee = QRectF()
+        if anchor is None:
+            self.update()
+            return
+        if moved:
+            end = self.to_image(pos)
+            x0, x1 = sorted((anchor.x(), end.x()))
+            y0, y1 = sorted((anchor.y(), end.y()))
+            if x1 - x0 < MIN_BOX_SIDE or y1 - y0 < MIN_BOX_SIDE:
+                self.update()
+                return
+            self.ai_box = (x0, y0, x1, y1)
+            self.aiPromptChanged.emit()
+            self.update()
+            return
+        self._add_ai_point(anchor, positive=not negative)
+
+    def _add_ai_point(self, point, positive=True) -> None:
+        if self.read_only or point is None:
+            return
+        self.ai_points.append((float(point.x()), float(point.y()), bool(positive)))
+        self.aiPromptChanged.emit()
+        self.update()
+
+    def undo_ai_point(self) -> bool:
+        """Backspace: take back the last click without starting over."""
+        if self.ai_points:
+            self.ai_points.pop()
+        elif self.ai_box is not None:
+            self.ai_box = None
+        else:
+            return False
+        if self.ai_points or self.ai_box is not None:
+            self.aiPromptChanged.emit()
+        else:
+            self.ai_preview = None
+        self.update()
+        return True
+
+    def has_ai_prompt(self) -> bool:
+        return bool(self.ai_points) or self.ai_box is not None
+
+    def ai_prompt(self):
+        """(points, box) for the predictor, in image pixels."""
+        return list(self.ai_points), self.ai_box
+
+    def set_ai_preview(self, box, busy=False) -> None:
+        self.ai_preview = box
+        self.ai_busy = bool(busy)
+        self.update()
+
+    def clear_ai(self, quiet: bool = False) -> None:
+        had = self.has_ai_prompt() or self.ai_preview is not None
+        self.ai_points = []
+        self.ai_box = None
+        self.ai_preview = None
+        self.ai_busy = False
+        self._ai_anchor = None
+        if self._drag == D_AI:
+            self._drag = D_NONE
+            self._marquee = QRectF()
+        if had and not quiet:
+            self.aiPromptChanged.emit()
+        self.update()
 
     # ══════════════════════════════════════════════════════
     # OPERATIONS
@@ -752,8 +891,15 @@ class BoxCanvas(ImageViewport):
     # KEYBOARD
     # ══════════════════════════════════════════════════════
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape and self.cancel():
+        key = event.key()
+        if key == Qt.Key.Key_Escape and self.cancel():
             return
+        if self.tool == T_AI:
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.ai_preview is not None:
+                self.aiAccepted.emit()
+                return
+            if key == Qt.Key.Key_Backspace and self.undo_ai_point():
+                return
         super().keyPressEvent(event)
 
     # ══════════════════════════════════════════════════════
@@ -761,20 +907,27 @@ class BoxCanvas(ImageViewport):
     # ══════════════════════════════════════════════════════
     def paintEvent(self, event):
         painter = QPainter(self)
+        try:
+            self._paint_scene(painter)
+        except Exception:                    # a drawing fault must not end the tool
+            report_paint_fault("The image canvas")
+        finally:
+            painter.end()
+
+    def _paint_scene(self, painter) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.fillRect(self.rect(), self._void)
         if not self.has_image():
             self._paint_placeholder(painter)
-            painter.end()
             return
         self._paint_image(painter)
         self._paint_verified(painter)
         self._paint_boxes(painter)
         self._paint_new(painter)
+        self._paint_ai(painter)
         self._paint_marquee(painter)
         self._paint_crosshair(painter)
-        painter.end()
 
     def _paint_verified(self, painter) -> None:
         if not self.verified:
@@ -885,6 +1038,52 @@ class BoxCanvas(ImageViewport):
         painter.setPen(QPen(qcolor(self._colours["label"])))
         painter.drawText(rect.bottomRight() + QPointF(8, 14), text)
 
+    def _paint_ai(self, painter) -> None:
+        """The prompt (clicks and a box) and the proposal it produced."""
+        if self.tool != T_AI and not self.has_ai_prompt():
+            return
+        if self.ai_box is not None:
+            x0, y0, x1, y1 = self.ai_box
+            rect = QRectF(self.to_widget(x0, y0), self.to_widget(x1, y1)).normalized()
+            pen = QPen(qcolor(self._colours["guide"]), 1.2, Qt.PenStyle.DashLine)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(rect)
+
+        if self.ai_preview is not None:
+            box = self.ai_preview
+            rect = QRectF(self.to_widget(box.x0, box.y0),
+                          self.to_widget(box.x1, box.y1)).normalized()
+            colour = qcolor(self._colour_for(box.label) or CANVAS["shape"])
+            fill = QColor(colour)
+            fill.setAlpha(60)
+            pen = QPen(colour, self.line_width + 1, Qt.PenStyle.DashLine)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(fill))
+            painter.drawRect(rect)
+            painter.setPen(QPen(qcolor(self._colours["label"])))
+            painter.drawText(rect.bottomLeft() + QPointF(2, 15),
+                             "Enter to keep  ·  Esc to drop")
+
+        for x, y, positive in self.ai_points:
+            centre = self.to_widget(x, y)
+            colour = self._good if positive else QColor("#e5534b")
+            painter.setPen(QPen(QColor(0, 0, 0, 170), 2.5))
+            painter.setBrush(QBrush(colour))
+            painter.drawEllipse(centre, 5.0, 5.0)
+            painter.setPen(QPen(QColor("#ffffff"), 1.6))
+            painter.drawLine(centre + QPointF(-2.6, 0), centre + QPointF(2.6, 0))
+            if positive:
+                painter.drawLine(centre + QPointF(0, -2.6), centre + QPointF(0, 2.6))
+
+        if self.ai_busy:
+            painter.setPen(QPen(qcolor(self._colours["label"])))
+            painter.drawText(self.rect().adjusted(12, 10, -12, 0),
+                             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
+                             "AI thinking…")
+
     def _paint_marquee(self, painter) -> None:
         if self._marquee.isEmpty():
             return
@@ -896,7 +1095,7 @@ class BoxCanvas(ImageViewport):
         painter.drawRect(self._marquee)
 
     def _paint_crosshair(self, painter) -> None:
-        if not self.show_crosshair or self.tool != T_BOX:
+        if not self.show_crosshair or self.tool not in (T_BOX, T_AI):
             return
         cursor = self.mapFromGlobal(QCursor.pos())
         if not self.rect().contains(cursor):

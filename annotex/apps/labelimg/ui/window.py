@@ -24,18 +24,19 @@ from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QButtonGroup,
                                QVBoxLayout, QWidget)
 from PySide6.QtGui import QImageReader
 
+from annotex.core import clipboard
 from annotex.core.history import History
 from annotex.core.io_safe import FolderLock, folder_is_writable, read_json, write_text_atomic
-from annotex.core.session import AuditLog, DraftStore, SessionTimer
+from annotex.core.session import DraftStore
 from annotex.ui import icons
+from annotex.ui.dialogs.ai_dialog import AiModelDialog
 from annotex.ui.dialogs.common import Dialog
-from annotex.ui.dialogs.history_dialog import HistoryDialog
 from annotex.ui.dialogs.palette_dialog import CommandPalette, ShortcutSheet
 from annotex.ui.filmstrip import FilmStrip
 from annotex.ui.palette import install_theme, resolve_theme, toggled_setting
 from annotex.ui.widgets import MiniMap, StatsPanel, divider, section_label
 
-from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, AUDIT_NAME, BACKUP_DIR,
+from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, BACKUP_DIR,
                       DRAFT_NAME, FORMAT_EXT, FORMAT_LABELS, FORMAT_VOC,
                       FORMAT_YOLO, FORMATS, HOTKEY_DIGITS, LOCK_NAME,
                       MAX_UNDO_STEPS, PROJECT_KEYS, PROJECT_SETTINGS_NAME,
@@ -48,7 +49,7 @@ from ..core.class_store import (ClassStore, color_for_name,
                                 rename_class_in_annotations)
 from ..core.model import Box, boxes_match, find_duplicates
 from . import shortcuts as sc
-from .canvas import T_BOX, T_PAN, T_SELECT, BoxCanvas
+from .canvas import T_AI, T_BOX, T_PAN, T_SELECT, BoxCanvas
 from .dialogs.batch_dialog import APPLY_BACKGROUND, APPLY_BOXES, BatchApplyDialog
 from .dialogs.class_manager import ClassManagerDialog
 from .dialogs.label_dialog import LabelDialog
@@ -58,7 +59,8 @@ from .dialogs.transfer_dialog import CocoExportDialog, ImportDialog, ImportRevie
 from .dialogs.welcome_dialog import AboutDialog, WelcomeDialog
 from .panels import ActiveClassChip, BoxListPanel, ClassPalette
 
-TOOL_ACTIONS = {"tool_select": T_SELECT, "tool_box": T_BOX, "tool_pan": T_PAN}
+TOOL_ACTIONS = {"tool_select": T_SELECT, "tool_box": T_BOX, "tool_pan": T_PAN,
+                "tool_ai": T_AI}
 TEXT_INPUTS = (QLineEdit, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QKeySequenceEdit)
 
 
@@ -122,9 +124,8 @@ class LabelImgWindow(QMainWindow):
 
         self.lock = FolderLock(LOCK_NAME, APP_VERSION)
         self.draft = DraftStore(DRAFT_NAME, serializer=_box_state)
-        self.audit = AuditLog(AUDIT_NAME)
-        self.timer = SessionTimer()
         self.history = History(MAX_UNDO_STEPS)
+        self.assistant = None            # the AI helper, built on first use
 
         self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
         self.setMinimumSize(1120, 700)
@@ -146,6 +147,7 @@ class LabelImgWindow(QMainWindow):
         else:
             self.menuBar().setNativeMenuBar(False)
         self.app.installEventFilter(self)
+        self._install_clipboard_bridge()
         self._sync_actions()
         self._status("Open a folder of images to begin  ·  Ctrl+U", "info")
 
@@ -194,6 +196,9 @@ class LabelImgWindow(QMainWindow):
             "toggle_difficult": self.toggle_difficult,
             "lock_box": self.toggle_lock,
             "hide_box": self.toggle_hidden,
+            "copy_boxes": lambda: self.copy_boxes(cut=False),
+            "cut_boxes": lambda: self.copy_boxes(cut=True),
+            "paste_boxes": self.paste_boxes,
             "copy_previous": lambda: self.copy_previous(replace=True),
             "append_previous": lambda: self.copy_previous(replace=False),
             "apply_to_images": lambda: self.batch_apply(APPLY_BOXES),
@@ -241,7 +246,7 @@ class LabelImgWindow(QMainWindow):
             "review_mode": self.open_review,
             "dashboard": self.open_dashboard,
             "open_report": self.write_report,
-            "history_log": self.open_history,
+            "ai_model": self.open_ai_model,
             "settings": self.open_settings,
             "shortcuts_sheet": self.open_shortcuts,
             "command_palette": self.open_palette,
@@ -517,13 +522,6 @@ class LabelImgWindow(QMainWindow):
                                        "annotation file  ·  BAI = annotated images with "
                                        "zero boxes (background)")
         bar.addPermanentWidget(self.progress_label)
-        self.session_label = QLabel("")
-        self.session_label.setObjectName("Subtitle")
-        bar.addPermanentWidget(self.session_label)
-        self._session_timer = QTimer(self)
-        self._session_timer.timeout.connect(
-            lambda: self.session_label.setText(self.timer.summary()))
-        self._session_timer.start(20000)
 
     def _wire(self) -> None:
         canvas = self.canvas
@@ -537,6 +535,8 @@ class LabelImgWindow(QMainWindow):
         canvas.editLabelRequested.connect(lambda _i: self.edit_label())
         canvas.contextMenuRequested.connect(self._show_context_menu)
         canvas.toolFinished.connect(self.set_tool)
+        canvas.aiPromptChanged.connect(self._guard(self.refresh_ai_preview))
+        canvas.aiAccepted.connect(self._guard(self.accept_ai_preview))
 
         self.filmstrip.imagePicked.connect(self.go_to_index)
         self.minimap.navigateTo.connect(canvas.center_on)
@@ -608,6 +608,7 @@ class LabelImgWindow(QMainWindow):
         for group in (("undo", "redo"),
                       ("delete_box", "duplicate_box", "select_all", "clear_all"),
                       ("edit_label", "toggle_difficult", "lock_box", "hide_box"),
+                      ("copy_boxes", "cut_boxes", "paste_boxes"),
                       ("copy_previous", "append_previous", "apply_to_images",
                        "background_many")):
             for action_id in group:
@@ -646,8 +647,10 @@ class LabelImgWindow(QMainWindow):
             go.addAction(self.act(action_id))
 
         window = bar.addMenu("&Window")
-        for action_id in ("review_mode", "dashboard", "open_report", "history_log"):
+        for action_id in ("review_mode", "dashboard", "open_report"):
             window.addAction(self.act(action_id))
+        window.addSeparator()
+        window.addAction(self.act("ai_model"))
         window.addSeparator()
         for action_id in ("settings", "command_palette", "shortcuts_sheet"):
             window.addAction(self.act(action_id))
@@ -677,12 +680,19 @@ class LabelImgWindow(QMainWindow):
     # KEYS THE REGISTRY CANNOT HOLD
     # ══════════════════════════════════════════════════════
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.Type.KeyPress:
+        kind = event.type()
+        if kind not in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride):
             return False
         if not self.isVisible() or QApplication.activeModalWidget() is not None \
                 or QApplication.activePopupWidget() is not None:
             return False
         focus = QApplication.focusWidget()
+        if kind == QEvent.Type.ShortcutOverride:
+            # Ctrl+C in the class search must copy the text, not the boxes.
+            if sc.steals_from_text_field(event, focus, TEXT_INPUTS + (QComboBox,)):
+                event.accept()
+                return True
+            return False
         if focus is None or obj is not focus:
             return False
         if focus is not self and not self.isAncestorOf(focus):
@@ -906,7 +916,6 @@ class LabelImgWindow(QMainWindow):
         entry = project.merge_name(name)
         self.class_store.save()
         self.refresh_class_ui()
-        self.audit.record("add_class", detail="%s (id %d)" % (entry.name, entry.id))
         self._status("Added class \"%s\" (ID %d) to project \"%s\""
                      % (entry.name, entry.id, project.name), "good")
         return entry
@@ -1006,8 +1015,6 @@ class LabelImgWindow(QMainWindow):
                 self.apply_class_rename(old, new)
             self.class_store.save()
             self.settings.set("class_project", self.class_store.active_project_name)
-            self.audit.record("class_manager", detail="%d rename(s), %d reassignment(s)"
-                              % (len(dialog.renames), len(dialog.reassignments)))
         else:
             self.class_store = ClassStore.load_or_create(self.class_store.path)
         self.refresh_class_ui()
@@ -1158,12 +1165,9 @@ class LabelImgWindow(QMainWindow):
         self.index = 0
 
         self.draft.bind(folder)
-        self.audit.bind(folder)
-        self.audit.enabled = writable
         self.folder_label.setText(folder)
         self.settings.push_recent(folder)
         self._rebuild_recent()
-        self.audit.record("open_folder", detail="%d image(s)" % len(self.image_files))
 
         annotated = sum(1 for s in self.index_map.values() if s is not None)
         if not self.image_files:
@@ -1236,7 +1240,6 @@ class LabelImgWindow(QMainWindow):
         if "save_dir" in self._batch:
             self._batch["save_dir"] = os.path.relpath(self.save_dir, self.folder) \
                 if self.save_dir else ""
-        self.audit.record("change_save_dir", detail=self.save_dir or "beside images")
         self._sync_format_widgets()
         self._refresh_filmstrip()
         self._load_image(self.index)
@@ -1310,6 +1313,8 @@ class LabelImgWindow(QMainWindow):
             self._refresh_chip()
         finally:
             self._loading = False
+        if self.canvas.tool == T_AI and not self.enter_ai_tool():
+            self.set_tool(T_SELECT)
         self._refresh_side()
         self._update_stats()
         self._refresh_minimap()
@@ -1392,7 +1397,6 @@ class LabelImgWindow(QMainWindow):
         if self._loading:
             return
         self.history.push(str(label or "Edit"), self.canvas.snapshot())
-        self.timer.touch()
         self._refresh_side()
         self._sync_actions()
 
@@ -1421,6 +1425,8 @@ class LabelImgWindow(QMainWindow):
                                   [b for b in self.canvas.boxes if b.visible])
 
     def set_tool(self, tool) -> None:
+        if tool == T_AI and self.canvas.tool != T_AI and not self.enter_ai_tool():
+            tool = T_SELECT
         self.canvas.set_tool(tool)
         button = self.tool_buttons.get(tool)
         if button is not None and not button.isChecked():
@@ -1430,13 +1436,20 @@ class LabelImgWindow(QMainWindow):
         hints = {T_SELECT: "Select - drag a box to move it, drag a handle to resize, "
                            "double-click to change its class",
                  T_BOX: "Box - drag out a new box; hold Ctrl for a square",
-                 T_PAN: "Pan - drag the image (middle-drag works with any tool)"}
+                 T_PAN: "Pan - drag the image (middle-drag works with any tool)",
+                 T_AI: "AI select - click the object; right-click excludes, drag a "
+                       "rough box to narrow it down, Enter keeps the proposal"}
         self._status(hints.get(tool, ""), "info")
 
     def _show_context_menu(self, global_pos) -> None:
-        if not self.canvas.selection:
+        if not self.canvas.has_image():
             return
         menu = QMenu(self)
+        if not self.canvas.selection:
+            for action_id in ("paste_boxes", "copy_boxes", "select_all"):
+                menu.addAction(self.act(action_id))
+            menu.exec(global_pos)
+            return
         for action_id in ("edit_label", "toggle_difficult", "lock_box", "hide_box"):
             menu.addAction(self.act(action_id))
         classes = menu.addMenu("Set class")
@@ -1444,6 +1457,9 @@ class LabelImgWindow(QMainWindow):
             key = self.class_hotkeys.get(entry.name, "")
             action = classes.addAction("%s%s" % (entry.name, "\t%s" % key if key else ""))
             action.triggered.connect(lambda _c=False, n=entry.name: self.apply_class_choice(n))
+        menu.addSeparator()
+        for action_id in ("copy_boxes", "cut_boxes", "paste_boxes"):
+            menu.addAction(self.act(action_id))
         menu.addSeparator()
         for action_id in ("duplicate_box", "delete_box", "zoom_selection"):
             menu.addAction(self.act(action_id))
@@ -1557,6 +1573,226 @@ class LabelImgWindow(QMainWindow):
                                                  added, previous), "good")
 
     # ══════════════════════════════════════════════════════
+    # CLIPBOARD  (copy boxes here, paste them on another image)
+    # ══════════════════════════════════════════════════════
+    def _install_clipboard_bridge(self) -> None:
+        """Mirror the annotation clipboard onto the system one, so a copy
+        made here can be pasted in LabelImg Shapes - or in this tool after a
+        restart."""
+        def read_text():
+            board = QApplication.clipboard()
+            return board.text() if board is not None else ""
+
+        def write_text(text):
+            board = QApplication.clipboard()
+            if board is not None:
+                board.setText(text)
+
+        try:
+            clipboard.set_bridge(read_text, write_text)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _to_payload_item(box) -> dict:
+        return {"label": box.label, "difficult": bool(box.difficult),
+                "x0": float(box.x0), "y0": float(box.y0),
+                "x1": float(box.x1), "y1": float(box.y1),
+                "bounds": [float(box.x0), float(box.y0), float(box.x1), float(box.y1)]}
+
+    @staticmethod
+    def _from_payload_item(item):
+        """A Box out of anything on the clipboard - including a polygon or a
+        circle copied in LabelImg Shapes, which arrives as its bounds."""
+        try:
+            bounds = [float(v) for v in item["bounds"]]
+        except Exception:
+            return None
+        label = str(item.get("label", "") or "")
+        return Box(label, bounds[0], bounds[1], bounds[2], bounds[3],
+                   bool(item.get("difficult", False)))
+
+    def copy_boxes(self, cut=False) -> None:
+        """Copy the selection - or everything, when nothing is selected."""
+        if not self.canvas.has_image():
+            self._status("No image open", "warning")
+            return
+        boxes = self.canvas.selected_boxes()
+        whole = False
+        if not boxes:
+            boxes, whole = list(self.canvas.boxes), True
+        if not boxes:
+            self._status("There is nothing on this image to copy", "warning")
+            return
+        if cut and self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return
+        width = self.image_shape[1] if self.image_shape else 0
+        height = self.image_shape[0] if self.image_shape else 0
+        clipboard.copy(clipboard.KIND_BOXES,
+                       [self._to_payload_item(b) for b in boxes], (width, height),
+                       source=os.path.basename(self.current_name() or ""))
+        removed = 0
+        if cut:
+            if whole:
+                removed = self.canvas.clear_all()
+            else:
+                removed = self.canvas.delete_selected()
+        self._sync_actions()
+        self._status("%s %d box(es)%s  ·  Ctrl+V pastes them onto another image"
+                     % ("Cut" if cut else "Copied", removed if cut else len(boxes),
+                        " (the whole image - nothing was selected)"
+                        if whole and not cut else ""), "good")
+
+    def paste_boxes(self) -> None:
+        if not self._writable_image():
+            return
+        payload = clipboard.content()
+        if not payload or not len(payload):
+            self._status("Nothing has been copied yet - select boxes and press Ctrl+C",
+                         "warning")
+            return
+        width = self.image_shape[1] if self.image_shape else 0
+        height = self.image_shape[0] if self.image_shape else 0
+        items, fx, fy = payload.scale_to((width, height))
+        boxes = [box for box in (self._from_payload_item(i) for i in items)
+                 if box is not None]
+        if not boxes:
+            self._status("What was copied cannot become boxes", "warning")
+            return
+        self.ensure_classes(b.label for b in boxes if b.label)
+        added = self.canvas.add_boxes(boxes, "Paste boxes")
+        if not added:
+            self._status("Nothing could be pasted - the boxes fall outside this image",
+                         "warning")
+            return
+        notes = []
+        if abs(fx - 1.0) > 1e-6 or abs(fy - 1.0) > 1e-6:
+            notes.append("scaled to this image")
+        if added < len(boxes):
+            notes.append("%d did not fit" % (len(boxes) - added))
+        if payload.kind != clipboard.KIND_BOXES:
+            notes.append("from LabelImg Shapes, as bounding boxes")
+        self._status("Pasted %d box(es)%s" % (added, "  ·  " + "; ".join(notes)
+                                              if notes else ""),
+                     "warning" if len(notes) > 1 else "good")
+
+    # ══════════════════════════════════════════════════════
+    # AI  (Segment Anything)
+    # ══════════════════════════════════════════════════════
+    def ai(self):
+        """The assistant, built the first time it is actually wanted."""
+        if self.assistant is None:
+            from annotex.ui.ai_assist import SamAssistant
+            self.assistant = SamAssistant(self.settings, self)
+            self.assistant.stateChanged.connect(self._status)
+            self.assistant.ready.connect(lambda _t: self._on_ai_ready())
+            self.assistant.failed.connect(self._on_ai_failed)
+        return self.assistant
+
+    def _on_ai_ready(self) -> None:
+        self.canvas.set_ai_preview(self.canvas.ai_preview, busy=False)
+        if self.canvas.has_ai_prompt():
+            self.refresh_ai_preview()
+
+    def _on_ai_failed(self, message) -> None:
+        self.canvas.set_ai_preview(None, busy=False)
+        self._status(str(message).replace("\n", "  "), "danger")
+
+    def enter_ai_tool(self) -> bool:
+        """Turn the AI tool on for the image on screen.  False means it could
+        not be turned on, and the caller should fall back to Select."""
+        if not self.canvas.has_image():
+            self._status("Open an image first", "warning")
+            return False
+        if self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return False
+        assistant = self.ai()
+        ok, why = assistant.usable()
+        if not ok:
+            self._status(str(why).replace("\n", "  "), "warning")
+            QMessageBox.information(self, "AI select", why)
+            self.open_ai_model()
+            ok, _why = assistant.usable()
+            if not ok:
+                return False
+        rel = self.current_name()
+        if rel is None:
+            return False
+        image = self.current_pixmap.toImage() if self.current_pixmap is not None else None
+        if image is None or image.isNull():
+            self._status("This image cannot be handed to the model", "warning")
+            return False
+        assistant.prepare(assistant.token_for(self.io.image_path(rel)), image)
+        self.canvas.set_ai_preview(None, busy=assistant.is_busy())
+        return True
+
+    def refresh_ai_preview(self) -> None:
+        canvas = self.canvas
+        if canvas.tool != T_AI:
+            return
+        points, box = canvas.ai_prompt()
+        if not points and box is None:
+            canvas.set_ai_preview(None)
+            return
+        assistant = self.ai()
+        canvas.set_ai_preview(canvas.ai_preview, busy=True)
+        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        try:
+            result, why = assistant.predict(points, box)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if result is None:
+            canvas.set_ai_preview(None, busy=assistant.is_busy())
+            self._status(str(why).replace("\n", "  "), "warning")
+            return
+        found = assistant.box_from(result)
+        if not found:
+            canvas.set_ai_preview(None)
+            self._status("The AI found nothing there - click the object itself, or "
+                         "right-click to exclude part of it", "warning")
+            return
+        preview = Box(self.current_class or "", *found)
+        clean, _messages = preview.rounded().validated(self.image_shape[1],
+                                                       self.image_shape[0])
+        canvas.set_ai_preview(clean if clean is not None else preview.rounded())
+        self._status("AI proposal %s  ·  Enter keeps it, more clicks refine it, "
+                     "Esc drops it" % preview.describe(), "info")
+
+    def accept_ai_preview(self) -> None:
+        canvas = self.canvas
+        preview = canvas.ai_preview
+        if preview is None:
+            self._status("Click the object first", "warning")
+            return
+        if self.pref("skip_label_dialog", True) and self.current_class:
+            label = self.current_class
+        else:
+            label = self.ask_label(self.current_class or "", "Class for the AI box")
+            if not label:
+                self._status("Proposal dropped - no class chosen", "info")
+                return
+        box = preview.copy()
+        box.label = label
+        if not canvas.add_box(box, "AI box"):
+            return
+        if self.pref("sticky_class", True):
+            self.set_current_class(label, announce=False)
+        if not self.pref("ai_keep_prompt", False):
+            canvas.clear_ai(quiet=True)
+        self._status("AI box added as %s  ·  click the next object" % label, "good")
+
+    def open_ai_model(self) -> None:
+        dialog = AiModelDialog(self, self.ai(), self.theme)
+        dialog.exec()
+        if dialog.changed:
+            self.canvas.set_ai_preview(None)
+            if self.canvas.tool == T_AI and not self.enter_ai_tool():
+                self.set_tool(T_SELECT)
+            self._sync_actions()
+
+    # ══════════════════════════════════════════════════════
     # SAVING
     # ══════════════════════════════════════════════════════
     def _matches_saved(self, rel) -> bool:
@@ -1610,7 +1846,6 @@ class LabelImgWindow(QMainWindow):
                              "folder (F5) to see it.", "warning")
                 return False
             self.io.accept_external(rel)
-            self.audit.record("overwrite_external", rel, "user chose to overwrite")
 
         project = self.project()
         report = self.io.write(rel, keep, self.fmt, self.image_shape, self.verified,
@@ -1632,9 +1867,6 @@ class LabelImgWindow(QMainWindow):
         self.index_map[rel] = self.io.summarise(rel)
         self.history.reset(self.canvas.snapshot())
         self.draft.clear()
-        self.timer.count_image(len(keep))
-        self.audit.record("save", rel, "%d box(es) as %s%s" % (
-            len(keep), self.fmt, ", verified" if self.verified else ""))
         notes.extend(report.warnings)
         message = "Saved %d box(es) for %s" % (len(keep), os.path.basename(rel))
         self._status(message + ("  ·  " + "; ".join(notes[:2]) if notes else ""),
@@ -1694,7 +1926,6 @@ class LabelImgWindow(QMainWindow):
             self.canvas.clear_all()
         if not self._write_current(self.current_name()):
             return
-        self.audit.record("background", self.current_name())
         self._advance()
 
     def toggle_verified(self) -> None:
@@ -1749,7 +1980,6 @@ class LabelImgWindow(QMainWindow):
             self.saved.pop(name, None)
             self.saved_verified.pop(name, None)
             self.index_map[name] = self.io.summarise(name)
-        self.audit.record("batch_apply", detail="%s -> %d image(s)" % (dialog.action, len(done)))
         if rel in done:
             self._load_image(self.index)
         self._refresh_filmstrip()
@@ -1778,7 +2008,6 @@ class LabelImgWindow(QMainWindow):
         if not ok:
             self._status("Could not move the image: %s" % message, "danger")
             return
-        self.audit.record("delete_image", rel, message)
         self.image_files.pop(self.index)
         for cache in (self.index_map, self.saved, self.saved_verified):
             cache.pop(rel, None)
@@ -1794,7 +2023,6 @@ class LabelImgWindow(QMainWindow):
             return
         ok, detail = copy_to_copies(self.io, rel)
         if ok:
-            self.audit.record("copy_image", rel, detail)
             self._status("Image copied to %s" % detail, "good")
         else:
             self._status("Could not copy the image: %s" % detail, "danger")
@@ -1824,7 +2052,6 @@ class LabelImgWindow(QMainWindow):
             self.history.push("Restore from backup", self.canvas.snapshot())
         self.verified = result.verified
         self.canvas.verified = self.verified
-        self.audit.record("restore_backup", rel, summary)
         self._refresh_side()
         self._status("Restored %s from the backup - Ctrl+S keeps it" % summary, "warning")
 
@@ -1864,7 +2091,6 @@ class LabelImgWindow(QMainWindow):
                                     keep_backup=False)
         if ok:
             self._batch.update({k: v for k, v in payload.items() if k in PROJECT_KEYS})
-            self.audit.record("save_project_settings")
             self._status("Batch settings written to %s" % PROJECT_SETTINGS_NAME, "good")
         else:
             self._status("Could not write the batch settings: %s" % err, "danger")
@@ -1968,8 +2194,6 @@ class LabelImgWindow(QMainWindow):
                     failed.append(rel)
         finally:
             QApplication.restoreOverrideCursor()
-        self.audit.record("import", detail="%d written from %s (%s)"
-                          % (written, dialog.folder, dialog.strategy))
         if self.current_name() in result.merged:
             self._load_image(self.index)
         self._refresh_filmstrip()
@@ -2003,8 +2227,6 @@ class LabelImgWindow(QMainWindow):
                                                    dialog.include_background)
         finally:
             QApplication.restoreOverrideCursor()
-        self.audit.record("export_coco", detail="%d image(s), %d box(es)"
-                          % (counts["images"], counts["annotations"]))
         if report.ok:
             message = "COCO written: %d image(s), %d box(es) → %s" % (
                 counts["images"], counts["annotations"],
@@ -2019,21 +2241,16 @@ class LabelImgWindow(QMainWindow):
         return reporting.build_stats(self.index_map, self.image_files, self.project(),
                                      self.folder)
 
-    def _session(self):
-        return {"elapsed": self.timer.elapsed_text(), "images": self.timer.images_done,
-                "per_hour": self.timer.per_hour(), "shapes": self.timer.shapes_drawn}
-
     def write_report(self, quiet=False) -> None:
         if not self.folder:
             self._status("No folder open", "warning")
             return
         stats = self._stats()
-        report = reporting.write_report(stats, self.folder, self._session())
+        report = reporting.write_report(stats, self.folder)
         reporting.write_summary_json(stats, self.folder)
         if not report.ok:
             self._status(report.summary(), "danger")
             return
-        self.audit.record("report")
         if quiet:
             return
         self._status("Report written to %s" % os.path.basename(report.written[0]), "good")
@@ -2091,7 +2308,6 @@ class LabelImgWindow(QMainWindow):
                     return
                 self.saved.pop(rel, None)
                 self.index_map[rel] = self.io.summarise(rel)
-                self.audit.record("verify", rel, "verified" if not verified else "unverified")
             dialog.set_status(rel, self._statuses().get(rel, "todo"))
             self._refresh_filmstrip()
             self._update_stats()
@@ -2105,15 +2321,9 @@ class LabelImgWindow(QMainWindow):
             return
         if not self._commit_current():
             return
-        dialog = DashboardDialog(self, self._stats(), self._session(), self.theme)
+        dialog = DashboardDialog(self, self._stats(), self.theme)
         dialog.reportRequested.connect(self.write_report)
         dialog.exec()
-
-    def open_history(self) -> None:
-        if not self.folder:
-            self._status("No folder open", "warning")
-            return
-        HistoryDialog(self, self.audit.tail(500)).exec()
 
     def open_settings(self) -> None:
         dialog = SettingsDialog(self, self.settings)
@@ -2211,7 +2421,7 @@ class LabelImgWindow(QMainWindow):
         writable = has_image and not self.read_only
         for action_id in ("reload_folder", "close_folder", "change_save_dir",
                           "import_annotations", "export_coco", "review_mode",
-                          "dashboard", "open_report", "history_log",
+                          "dashboard", "open_report",
                           "save_project_settings", "next_image", "prev_image",
                           "first_image", "last_image", "next_todo"):
             self.act(action_id).setEnabled(has_batch)
@@ -2221,6 +2431,9 @@ class LabelImgWindow(QMainWindow):
                           "delete_image"):
             self.act(action_id).setEnabled(writable)
         self.act("copy_image").setEnabled(has_image)
+        self.act("copy_boxes").setEnabled(has_image and bool(self.canvas.boxes))
+        self.act("cut_boxes").setEnabled(writable and bool(self.canvas.boxes))
+        self.act("paste_boxes").setEnabled(writable and clipboard.count() > 0)
         for action_id in ("delete_box", "duplicate_box", "edit_label", "toggle_difficult",
                           "lock_box", "hide_box", "zoom_selection"):
             self.act(action_id).setEnabled(writable and bool(selection))
@@ -2236,7 +2449,9 @@ class LabelImgWindow(QMainWindow):
                        self.verify_button):
             button.setEnabled(writable)
         for tool, button in self.tool_buttons.items():
-            button.setEnabled(has_image and (tool != T_BOX or not self.read_only))
+            enabled = has_image and (tool not in (T_BOX, T_AI) or not self.read_only)
+            button.setEnabled(enabled)
+            self.act(next(a for a, t in TOOL_ACTIONS.items() if t == tool)).setEnabled(enabled)
 
     # ══════════════════════════════════════════════════════
     # LIFECYCLE
@@ -2285,7 +2500,6 @@ class LabelImgWindow(QMainWindow):
                 return False
         try:
             self._write_draft()
-            self.audit.record("close", detail=self.timer.summary())
             if self.host is None:
                 self.settings.set("window_geometry",
                                   bytes(self.saveGeometry().toBase64()).decode("ascii"))
@@ -2293,6 +2507,8 @@ class LabelImgWindow(QMainWindow):
             self.settings.save()
             self.class_store.save()
             self.filmstrip.shutdown()
+            if self.assistant is not None:
+                self.assistant.shutdown()
             self.lock.release()
             self.app.removeEventFilter(self)
         except Exception:

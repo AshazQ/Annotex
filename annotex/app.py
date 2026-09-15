@@ -137,30 +137,88 @@ def _write_crash(exc_type, exc_value, exc_tb) -> str:
     return str(path)
 
 
+# One dialog per distinct fault, and never more than this many in a run: an
+# error inside a repaint would otherwise fire on every frame and bury the
+# screen under message boxes nobody can dismiss fast enough.
+MAX_ERROR_DIALOGS = 8
+_seen_faults = set()
+_dialogs_shown = [0]
+_inside_hook = [False]
+
+
+def _fault_key(exc_type, exc_tb) -> str:
+    frame = exc_tb
+    while frame is not None and frame.tb_next is not None:
+        frame = frame.tb_next
+    where = ""
+    if frame is not None:
+        where = "%s:%d" % (frame.tb_frame.f_code.co_filename, frame.tb_lineno)
+    return "%s@%s" % (exc_type.__name__, where)
+
+
 def install_excepthook(window_getter=None) -> None:
     """Unhandled exceptions become a message box and a crash file, never a
-    silent death."""
+    silent death and never a wall of dialogs.
+
+    The same fault is reported once: the work carries on, because losing a
+    repaint is not a reason to lose an afternoon of annotation."""
     def hook(exc_type, exc_value, exc_tb):
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_tb)
             return
-        path = _write_crash(exc_type, exc_value, exc_tb)
-        sys.stderr.write("".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
+        if _inside_hook[0]:                       # a fault while reporting one
+            traceback.print_exception(exc_type, exc_value, exc_tb)
+            return
+        _inside_hook[0] = True
         try:
+            sys.stderr.write("".join(traceback.format_exception(
+                exc_type, exc_value, exc_tb)))
+            key = _fault_key(exc_type, exc_tb)
+            if key in _seen_faults:
+                return
+            _seen_faults.add(key)
+            path = _write_crash(exc_type, exc_value, exc_tb)
+            if _dialogs_shown[0] >= MAX_ERROR_DIALOGS:
+                return
             from PySide6.QtWidgets import QApplication, QMessageBox
-            if QApplication.instance() is not None:
+            if QApplication.instance() is None:
+                return
+            _dialogs_shown[0] += 1
+            window = None
+            try:
                 window = window_getter() if window_getter else None
-                box = QMessageBox(window)
-                box.setIcon(QMessageBox.Icon.Warning)
-                box.setWindowTitle("Something went wrong")
-                box.setText("%s hit an unexpected error, but your annotations on "
-                            "disk are untouched." % SUITE_NAME)
-                box.setInformativeText("%s: %s\n\nA report was written to:\n%s"
-                                       % (exc_type.__name__, exc_value, path))
-                box.exec()
+            except Exception:
+                window = None
+            box = QMessageBox(window)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Something went wrong")
+            box.setText("%s hit an unexpected error, but your annotations on "
+                        "disk are untouched.  You can carry on working."
+                        % SUITE_NAME)
+            box.setInformativeText("%s: %s\n\nA report was written to:\n%s"
+                                   % (exc_type.__name__, exc_value, path))
+            box.setDetailedText("".join(traceback.format_exception(
+                exc_type, exc_value, exc_tb)))
+            box.exec()
         except Exception:
             pass
+        finally:
+            _inside_hook[0] = False
+
     sys.excepthook = hook
+
+    # A worker thread that dies quietly is how a job appears to hang forever.
+    try:
+        import threading
+
+        def thread_hook(args):
+            if issubclass(args.exc_type, SystemExit):
+                return
+            hook(args.exc_type, args.exc_value, args.exc_traceback)
+
+        threading.excepthook = thread_hook
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════

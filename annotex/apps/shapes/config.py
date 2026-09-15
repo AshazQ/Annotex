@@ -71,6 +71,12 @@ DEFAULT_SETTINGS = {
     "last_class": "",
     "class_project": "",
     "window_geometry": "",
+    # AI (Segment Anything).  Empty until a model is chosen; the tool is
+    # simply off until then.
+    "sam_encoder": "",
+    "sam_decoder": "",
+    "ai_keep_prompt": False,         # keep the clicks after accepting a shape
+    "ai_smoothing": 1.2,             # px; higher means fewer polygon points
 }
 
 

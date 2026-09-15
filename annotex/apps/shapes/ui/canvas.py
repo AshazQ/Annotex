@@ -18,7 +18,7 @@ from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QFontMetrics, QPainte
                            QPen, QPixmap, QPolygonF)
 
 from annotex.ui.palette import CANVAS, qcolor, readable_on
-from annotex.ui.viewport import ImageViewport
+from annotex.ui.viewport import ImageViewport, report_paint_fault
 
 from ..config import (KIND_CIRCLE, KIND_FREEHAND, KIND_OBB, MAX_POINTS,
                       MAX_SHAPES_PER_IMAGE, MIN_POINTS, MIN_SIZE, POINT_KINDS)
@@ -33,7 +33,11 @@ T_CIRCLE = "circle"
 T_ELLIPSE = "ellipse"
 T_FREEHAND = "freehand"
 T_PAN = "pan"
+T_AI = "ai"
 DRAW_TOOLS = (T_POLYGON, T_OBB, T_CIRCLE, T_ELLIPSE, T_FREEHAND)
+
+# A click prompt and a drag prompt are told apart by this, in screen pixels.
+AI_DRAG_PIXELS = 6.0
 
 TOOL_CURSORS = {
     T_SELECT: Qt.CursorShape.ArrowCursor,
@@ -43,6 +47,7 @@ TOOL_CURSORS = {
     T_ELLIPSE: Qt.CursorShape.CrossCursor,
     T_FREEHAND: Qt.CursorShape.CrossCursor,
     T_PAN: Qt.CursorShape.OpenHandCursor,
+    T_AI: Qt.CursorShape.PointingHandCursor,
 }
 
 # drags
@@ -55,6 +60,7 @@ D_ROTATE = "rotate"
 D_MARQUEE = "marquee"
 D_NEW = "new"
 D_FREEHAND = "freehand"
+D_AI = "ai"
 
 HANDLE_NAMES = ("nw", "n", "ne", "e", "se", "s", "sw", "w")
 HANDLE_PICK = 7.0
@@ -70,6 +76,8 @@ class ShapeCanvas(ImageViewport):
     statusMessage = Signal(str, str)     # text, level
     shapeDrawn = Signal(object)          # a Shape still without a class
     editLabelRequested = Signal()
+    aiPromptChanged = Signal()           # the AI prompt was added to
+    aiAccepted = Signal()                # Enter / double-click on a proposal
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -92,6 +100,14 @@ class ShapeCanvas(ImageViewport):
         self._hover_handle = ""
         self._hover_shape = -1
         self._space_pan = False
+
+        # AI (SAM) prompting
+        self.ai_points = []              # [(x, y, positive)] in image px
+        self.ai_box = None               # (x0, y0, x1, y1) in image px
+        self.ai_preview = None           # proposed [(x, y)] outline
+        self.ai_busy = False
+        self._ai_anchor = None
+        self._ai_negative = False
 
         self.show_crosshair = True
         self.show_labels = True
@@ -135,6 +151,7 @@ class ShapeCanvas(ImageViewport):
     def load_image(self, pixmap: QPixmap | None, shapes=None) -> None:
         self.shapes = [s.copy() for s in (shapes or [])]
         self.selection.clear()
+        self.clear_ai(quiet=True)
         self._cancel_interaction()
         self.set_pixmap(pixmap)
         self.selectionChanged.emit()
@@ -163,6 +180,8 @@ class ShapeCanvas(ImageViewport):
             return
         if tool != self.tool:
             self.cancel_draft(quiet=True)
+            if T_AI in (tool, self.tool):
+                self.clear_ai(quiet=True)
         self.tool = tool
         if tool != T_SELECT:
             self.clear_selection()
@@ -317,13 +336,18 @@ class ShapeCanvas(ImageViewport):
             self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
             return
         if button == Qt.MouseButton.RightButton:
-            if self._draft and self.tool == T_POLYGON:
+            if self.tool == T_AI:
+                self._add_ai_point(self.to_image(pos), positive=False)
+            elif self._draft and self.tool == T_POLYGON:
                 self.finish_draft()
             return
         if button != Qt.MouseButton.LeftButton:
             return
         if self.read_only:
             self.statusMessage.emit("This folder is open read-only", "warning")
+            return
+        if self.tool == T_AI:
+            self._ai_press(pos, mods)
             return
 
         tool = self.tool
@@ -412,6 +436,17 @@ class ShapeCanvas(ImageViewport):
                 self._draft.append(point)
             self.update()
             return
+        if drag == D_AI:
+            if self._ai_anchor is not None:
+                moved = pos - self._drag_origin
+                if abs(moved.x()) > AI_DRAG_PIXELS or abs(moved.y()) > AI_DRAG_PIXELS:
+                    self._drag_moved = True
+                current = self.to_image(pos)
+                self._marquee = QRectF(
+                    self.to_widget(self._ai_anchor.x(), self._ai_anchor.y()),
+                    self.to_widget(current.x(), current.y())).normalized()
+                self.update()
+            return
         if drag == D_MARQUEE:
             self._marquee = QRectF(self._drag_origin, pos).normalized()
             self.update()
@@ -446,6 +481,9 @@ class ShapeCanvas(ImageViewport):
         if drag == D_FREEHAND:
             self._commit_freehand()
             return
+        if drag == D_AI:
+            self._ai_release(QPointF(event.position()))
+            return
         if drag == D_MARQUEE:
             self._commit_marquee(event.modifiers())
             return
@@ -466,6 +504,10 @@ class ShapeCanvas(ImageViewport):
         if not self.has_image() or self.read_only:
             return
         pos = QPointF(event.position())
+        if self.tool == T_AI:
+            if self.ai_preview:
+                self.aiAccepted.emit()
+            return
         if self.tool == T_POLYGON and self._draft:
             self.finish_draft()
             return
@@ -713,6 +755,85 @@ class ShapeCanvas(ImageViewport):
         self._hover_shape = -1
 
     # ══════════════════════════════════════════════════════
+    # AI PROMPTING  (Segment Anything)
+    # ══════════════════════════════════════════════════════
+    def _ai_press(self, pos, mods) -> None:
+        self._drag = D_AI
+        self._drag_origin = QPointF(pos)
+        self._drag_moved = False
+        self._ai_anchor = self.to_image(pos)
+        self._ai_negative = bool(mods & (Qt.KeyboardModifier.ShiftModifier
+                                         | Qt.KeyboardModifier.ControlModifier))
+
+    def _ai_release(self, pos) -> None:
+        anchor, moved = self._ai_anchor, self._drag_moved
+        negative = self._ai_negative
+        self._drag = D_NONE
+        self._ai_anchor = None
+        self._marquee = QRectF()
+        if anchor is None:
+            self.update()
+            return
+        if moved:
+            end = self.to_image(pos)
+            x0, x1 = sorted((anchor.x(), end.x()))
+            y0, y1 = sorted((anchor.y(), end.y()))
+            if x1 - x0 < MIN_SIZE or y1 - y0 < MIN_SIZE:
+                self.update()
+                return
+            self.ai_box = (x0, y0, x1, y1)
+            self.aiPromptChanged.emit()
+            self.update()
+            return
+        self._add_ai_point(anchor, positive=not negative)
+
+    def _add_ai_point(self, point, positive=True) -> None:
+        if self.read_only or point is None:
+            return
+        self.ai_points.append((float(point.x()), float(point.y()), bool(positive)))
+        self.aiPromptChanged.emit()
+        self.update()
+
+    def undo_ai_point(self) -> bool:
+        if self.ai_points:
+            self.ai_points.pop()
+        elif self.ai_box is not None:
+            self.ai_box = None
+        else:
+            return False
+        if self.ai_points or self.ai_box is not None:
+            self.aiPromptChanged.emit()
+        else:
+            self.ai_preview = None
+        self.update()
+        return True
+
+    def has_ai_prompt(self) -> bool:
+        return bool(self.ai_points) or self.ai_box is not None
+
+    def ai_prompt(self):
+        return list(self.ai_points), self.ai_box
+
+    def set_ai_preview(self, points, busy=False) -> None:
+        self.ai_preview = list(points or []) or None
+        self.ai_busy = bool(busy)
+        self.update()
+
+    def clear_ai(self, quiet: bool = False) -> None:
+        had = self.has_ai_prompt() or self.ai_preview is not None
+        self.ai_points = []
+        self.ai_box = None
+        self.ai_preview = None
+        self.ai_busy = False
+        self._ai_anchor = None
+        if self._drag == D_AI:
+            self._drag = D_NONE
+            self._marquee = QRectF()
+        if had and not quiet:
+            self.aiPromptChanged.emit()
+        self.update()
+
+    # ══════════════════════════════════════════════════════
     # OPERATIONS
     # ══════════════════════════════════════════════════════
     def add_shape(self, shape: Shape, label: str = "Draw shape") -> bool:
@@ -856,17 +977,28 @@ class ShapeCanvas(ImageViewport):
             self._space_pan = True
             self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
             return
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self._draft:
-            self.finish_draft()
-            return
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self.tool == T_AI and self.ai_preview:
+                self.aiAccepted.emit()
+                return
+            if self._draft:
+                self.finish_draft()
+                return
         if key == Qt.Key.Key_Escape:
+            if self.tool == T_AI and (self.has_ai_prompt() or self.ai_preview):
+                self.clear_ai()
+                self.statusMessage.emit("AI prompt cleared", "info")
+                return
             if self.cancel_draft():
                 return
             if self.selection:
                 self.clear_selection()
                 return
-        if key == Qt.Key.Key_Backspace and self.undo_draft_point():
-            return
+        if key == Qt.Key.Key_Backspace:
+            if self.tool == T_AI and self.undo_ai_point():
+                return
+            if self.undo_draft_point():
+                return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
@@ -881,19 +1013,26 @@ class ShapeCanvas(ImageViewport):
     # ══════════════════════════════════════════════════════
     def paintEvent(self, event):
         painter = QPainter(self)
+        try:
+            self._paint_scene(painter)
+        except Exception:                    # a drawing fault must not end the tool
+            report_paint_fault("The shape canvas")
+        finally:
+            painter.end()
+
+    def _paint_scene(self, painter) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.fillRect(self.rect(), self._void)
         if not self.has_image():
             self._paint_placeholder(painter)
-            painter.end()
             return
         self._paint_image(painter)
         self._paint_shapes(painter)
         self._paint_draft(painter)
+        self._paint_ai(painter)
         self._paint_marquee(painter)
         self._paint_crosshair(painter)
-        painter.end()
 
     def _paint_shapes(self, painter) -> None:
         painter.setFont(self._label_font)
@@ -1022,6 +1161,49 @@ class ShapeCanvas(ImageViewport):
         for i, point in enumerate(points):
             painter.setBrush(QBrush(qcolor(self._colours["snap"] if i == 0 else self._colours["drawing"])))
             painter.drawEllipse(point, 5.0 if i == 0 else 3.5, 5.0 if i == 0 else 3.5)
+
+    def _paint_ai(self, painter) -> None:
+        if self.tool != T_AI and not self.has_ai_prompt():
+            return
+        if self.ai_box is not None:
+            x0, y0, x1, y1 = self.ai_box
+            rect = QRectF(self.to_widget(x0, y0), self.to_widget(x1, y1)).normalized()
+            pen = QPen(qcolor(self._colours["guide"]), 1.2, Qt.PenStyle.DashLine)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(rect)
+
+        if self.ai_preview:
+            polygon = QPolygonF([self.to_widget(x, y) for x, y in self.ai_preview])
+            colour = qcolor(self._colours["drawing"])
+            fill = QColor(colour)
+            fill.setAlpha(70)
+            pen = QPen(colour, self.line_width + 1, Qt.PenStyle.DashLine)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(fill))
+            painter.drawPolygon(polygon)
+            painter.setPen(QPen(qcolor(self._colours["label"])))
+            painter.drawText(polygon.boundingRect().bottomLeft() + QPointF(2, 15),
+                             "Enter to keep  ·  Esc to drop")
+
+        for x, y, positive in self.ai_points:
+            centre = self.to_widget(x, y)
+            colour = QColor("#5cbf6b") if positive else QColor("#e5534b")
+            painter.setPen(QPen(QColor(0, 0, 0, 170), 2.5))
+            painter.setBrush(QBrush(colour))
+            painter.drawEllipse(centre, 5.0, 5.0)
+            painter.setPen(QPen(QColor("#ffffff"), 1.6))
+            painter.drawLine(centre + QPointF(-2.6, 0), centre + QPointF(2.6, 0))
+            if positive:
+                painter.drawLine(centre + QPointF(0, -2.6), centre + QPointF(0, 2.6))
+
+        if self.ai_busy:
+            painter.setPen(QPen(qcolor(self._colours["label"])))
+            painter.drawText(self.rect().adjusted(12, 10, -12, 0),
+                             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
+                             "AI thinking…")
 
     def _paint_marquee(self, painter) -> None:
         if self._marquee.isEmpty():

@@ -290,13 +290,14 @@ def run_selftest(verbose: bool = True) -> int:
         totals = stats["totals"]
         check("report totals", (totals["images"], totals["labelled"], totals["background"],
                                 totals["remaining"]), (4, 2, 1, 1))
-        rr = report.write_report(stats, batch, {"elapsed": "3m", "images": 2,
-                                                "per_hour": 40.0, "shapes": 5})
+        rr = report.write_report(stats, batch)
         ok("report written", rr.ok)
         with open(rr.written[0], encoding="utf-8") as handle:
             page = handle.read()
         ok("report is html", page.startswith("<!doctype html>") and "</html>" in page)
         ok("report escaped", "%(" not in page)
+        ok("no annotation timings in the report",
+           "images / hour" not in page and "active time" not in page)
         ok("summary json", report.write_summary_json(stats, batch).ok)
 
         # ── class rename rewrites VOC, leaves YOLO ────────────────
@@ -317,6 +318,51 @@ def run_selftest(verbose: bool = True) -> int:
            and all("copy_images" not in r for r in scan_images(batch)))
 
         ok("boxes_match", boxes_match(boxes, [x.copy() for x in boxes]))
+
+        # ── no activity log is written beside the images ──────────
+        suffixes = set()
+        for root, _dirs, files in os.walk(batch):
+            suffixes.update(os.path.splitext(name)[1].lower() for name in files)
+        check("no .csv or log file is written for the batch",
+              sorted(e for e in suffixes if e in (".csv", ".log", ".jsonl")), [])
+
+        # ── the annotation clipboard ──────────────────────────────
+        from annotex.core import clipboard
+        clipboard.set_bridge(None, None)
+        clipboard.clear()
+        ok("an empty clipboard pastes nothing", clipboard.count() == 0)
+        picked = Box("person", 10, 20, 110, 220)
+        clipboard.copy(clipboard.KIND_BOXES,
+                       [{"label": picked.label, "difficult": False,
+                         "x0": picked.x0, "y0": picked.y0,
+                         "x1": picked.x1, "y1": picked.y1,
+                         "bounds": list(picked.bounds)}], (200, 400), "cam1.jpg")
+        check("one box on the clipboard", clipboard.count(), 1)
+        payload = clipboard.content()
+        same, fx, fy = payload.scale_to((200, 400))
+        check("the same size needs no scaling", (fx, fy), (1.0, 1.0))
+        check("a copy keeps its coordinates", same[0]["bounds"], [10.0, 20.0, 110.0, 220.0])
+        half, fx, fy = payload.scale_to((100, 200))
+        check("a smaller image scales the copy", (fx, fy), (0.5, 0.5))
+        check("the scaled box lands in the same place",
+              half[0]["bounds"], [5.0, 10.0, 55.0, 110.0])
+        check("what LabelImg Shapes copies still becomes a box",
+              Box("", *clipboard.Payload.from_json(payload.to_json()).items[0]["bounds"]).describe(),
+              "100 x 200")
+        check("rubbish on the system clipboard is ignored",
+              clipboard.Payload.from_json("<html>not ours</html>"), None)
+        clipboard.clear()
+
+        # ── the AI helper degrades politely ───────────────────────
+        from annotex.core.ai import sam
+        ok("the AI reports what it needs", isinstance(sam.missing_packages(), list))
+        ok("no model is invented out of nothing",
+           all(pair.complete for pair in sam.discover_models()))
+        try:
+            sam.SamRuntime("", "").load()
+            ok("a runtime with no files refuses to load", False)
+        except sam.SamError:
+            ok("a runtime with no files refuses to load", True)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -11,36 +11,44 @@ from __future__ import annotations
 import os
 import traceback
 
-from PySide6.QtCore import QByteArray, QSize, Qt, QUrl
+from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, QUrl
 from PySide6.QtGui import (QAction, QActionGroup, QDesktopServices, QImageReader,
                            QKeySequence, QPixmap)
-from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel,
-                               QMainWindow, QMessageBox, QPushButton, QScrollArea,
-                               QSplitter, QStatusBar, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QFileDialog,
+                               QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QLineEdit,
+                               QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
+                               QScrollArea, QSplitter, QStatusBar, QTextEdit, QVBoxLayout,
+                               QWidget)
 
 from annotex.apps.labelimg.core.class_store import ClassStore, color_for_name
 from annotex.apps.labelimg.ui.dialogs.class_manager import ClassManagerDialog
 from annotex.apps.labelimg.ui.dialogs.label_dialog import LabelDialog
 from annotex.apps.labelimg.ui.panels import ActiveClassChip, ClassPalette
+from annotex.core import clipboard
 from annotex.core.history import History
 from annotex.core.io_safe import FolderLock, folder_is_writable
 from annotex.ui import icons
+from annotex.ui.dialogs.ai_dialog import AiModelDialog
 from annotex.ui.dialogs.common import Dialog
 from annotex.ui.filmstrip import FilmStrip
 from annotex.ui.palette import install_theme, resolve_theme, toggled_setting
+from annotex.ui import shortcuts as _shared_keys
 from annotex.ui.theme_picker import theme_menu
 from annotex.ui.widgets import StatsPanel, divider
 
 from ..config import (APP_NAME, APP_TAGLINE, APP_VERSION, CURVE_SEGMENTS, HOTKEY_DIGITS,
-                      KIND_LABELS, LOCK_NAME, MAX_UNDO_STEPS, TASK_COCO, TASK_OBB,
-                      TASK_SEGMENT, class_store_path)
+                      KIND_LABELS, KIND_POLYGON, LOCK_NAME, MAX_UNDO_STEPS, TASK_COCO,
+                      TASK_OBB, TASK_SEGMENT, class_store_path)
 from ..core import export as exporting
-from ..core.model import shapes_match
+from ..core.model import Shape, shapes_match
 from ..core.store import read_annotation, rename_label, scan_images, write_annotation
-from .canvas import (T_CIRCLE, T_ELLIPSE, T_FREEHAND, T_OBB, T_PAN, T_POLYGON, T_SELECT,
-                     ShapeCanvas)
+from .canvas import (T_AI, T_CIRCLE, T_ELLIPSE, T_FREEHAND, T_OBB, T_PAN, T_POLYGON,
+                     T_SELECT, ShapeCanvas)
 from .dialogs import ExportDialog, ShapesSettingsDialog
 from .panels import ShapeListPanel
+
+TEXT_INPUTS = (QLineEdit, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QKeySequenceEdit,
+               QComboBox)
 
 TOOLS = ((T_SELECT, "Select and edit", "V", "cursor"),
          (T_POLYGON, "Polygon - click points, Enter to close", "P", "polygon"),
@@ -48,6 +56,8 @@ TOOLS = ((T_SELECT, "Select and edit", "V", "cursor"),
          (T_CIRCLE, "Circle - drag out from the centre", "C", "circle"),
          (T_ELLIPSE, "Ellipse - drag its box, Shift for a circle", "E", "ellipse"),
          (T_FREEHAND, "Freehand - hold and trace the outline", "F", "freehand"),
+         (T_AI, "AI select (SAM) - click the object, Enter keeps the outline",
+          "S", "magic"),
          (T_PAN, "Pan  (or hold Space)", "H", "hand"))
 
 
@@ -83,6 +93,7 @@ class ShapesWindow(QMainWindow):
 
         self.lock = FolderLock(LOCK_NAME, APP_VERSION)
         self.history = History(MAX_UNDO_STEPS)
+        self.assistant = None            # the AI helper, built on first use
 
         self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
         self.setMinimumSize(1080, 680)
@@ -97,6 +108,8 @@ class ShapesWindow(QMainWindow):
             self._restore_geometry()
         else:
             self.menuBar().setNativeMenuBar(False)
+        self._install_clipboard_bridge()
+        self.app.installEventFilter(self)
         self._sync_actions()
         self._status("Open a folder of images to begin  ·  Ctrl+O", "info")
 
@@ -142,6 +155,14 @@ class ShapesWindow(QMainWindow):
         a("redo", "Redo", ("Ctrl+Shift+Z", "Ctrl+Y"), self.redo, "redo")
         a("edit_class", "Change class…", "Ctrl+E", self.edit_label, "tag")
         a("duplicate", "Duplicate", "Ctrl+D", self.duplicate_shapes, "copy")
+        a("copy_shapes", "Copy the selected shapes", "Ctrl+C",
+          lambda: self.copy_shapes(cut=False), "copy")
+        a("cut_shapes", "Cut the selected shapes", "Ctrl+X",
+          lambda: self.copy_shapes(cut=True), "copy")
+        a("paste_shapes", "Paste copied shapes", "Ctrl+V", self.paste_shapes, "paste")
+        a("copy_previous", "Add the previous image's shapes", "Ctrl+Shift+V",
+          self.copy_previous, "layers")
+        a("ai_model", "AI model (SAM)…", "", self.open_ai_model, "magic")
         a("delete", "Delete", "Delete", self.delete_shapes, "trash")
         a("select_all", "Select all", "Ctrl+A", lambda: self.canvas.select_all(), "grid")
         a("rotate_left", "Rotate 15° left", "[", lambda: self.canvas.rotate_selected(-15), "rotate")
@@ -355,6 +376,8 @@ class ShapesWindow(QMainWindow):
         canvas.selectionChanged.connect(self._on_selection_changed)
         canvas.statusMessage.connect(self._status)
         canvas.shapeDrawn.connect(self._guard_arg(self.on_shape_drawn))
+        canvas.aiPromptChanged.connect(self._guard(self.refresh_ai_preview))
+        canvas.aiAccepted.connect(self._guard(self.accept_ai_preview))
         canvas.editLabelRequested.connect(self._guard(self.edit_label))
         canvas.zoomChanged.connect(lambda pct: self.zoom_label.setText("%d%%" % round(pct)))
         canvas.cursorMoved.connect(lambda x, y: self.coord_label.setText("x %d  y %d" % (x, y)))
@@ -400,6 +423,7 @@ class ShapesWindow(QMainWindow):
 
         edit = bar.addMenu("&Edit")
         for group in (("undo", "redo"), ("edit_class", "duplicate", "delete", "select_all"),
+                      ("copy_shapes", "cut_shapes", "paste_shapes", "copy_previous"),
                       ("rotate_left", "rotate_right"), ("clear_all",)):
             for action_id in group:
                 edit.addAction(self.act(action_id))
@@ -423,6 +447,7 @@ class ShapesWindow(QMainWindow):
 
         window = bar.addMenu("&Window")
         window.addAction(self.act("class_manager"))
+        window.addAction(self.act("ai_model"))
         window.addAction(self.act("settings"))
 
     def _rebuild_recent(self) -> None:
@@ -432,6 +457,28 @@ class ShapesWindow(QMainWindow):
             action = self.recent_menu.addAction(folder)
             action.triggered.connect(lambda _c=False, f=folder: self.open_folder(f))
         self.recent_menu.setEnabled(bool(recent))
+
+    # ══════════════════════════════════════════════════════
+    # KEYS THE REGISTRY CANNOT HOLD
+    # ══════════════════════════════════════════════════════
+    def eventFilter(self, obj, event):
+        """Let a focused text field keep Ctrl+C, Ctrl+V and Ctrl+A.
+
+        Qt hands window shortcuts the key first, so without this the class
+        search box could not be copied out of."""
+        try:
+            if event.type() != QEvent.Type.ShortcutOverride or not self.isVisible():
+                return False
+            if QApplication.activeModalWidget() is not None:
+                return False
+            focus = QApplication.focusWidget()
+            if focus is not None and (focus is self or self.isAncestorOf(focus)) \
+                    and _shared_keys.steals_from_text_field(event, focus, TEXT_INPUTS):
+                event.accept()
+                return True
+        except Exception:
+            return False
+        return False
 
     # ══════════════════════════════════════════════════════
     # THEME & SETTINGS
@@ -781,6 +828,8 @@ class ShapesWindow(QMainWindow):
         self._after_load()
 
     def _after_load(self) -> None:
+        if self.canvas.tool == T_AI and not self.enter_ai_tool():
+            self.set_tool(T_SELECT)
         self.filmstrip.set_index(self.index)
         self.verify_button.setChecked(self.verified)
         self.act("verify").setChecked(self.verified)
@@ -811,6 +860,8 @@ class ShapesWindow(QMainWindow):
     def set_tool(self, tool) -> None:
         if tool != T_SELECT and tool != T_PAN and not self.canvas.has_image():
             self._status("Open a folder first", "warning")
+            tool = T_SELECT
+        if tool == T_AI and self.canvas.tool != T_AI and not self.enter_ai_tool():
             tool = T_SELECT
         self.canvas.set_tool(tool)
         self.act("tool_" + tool).setChecked(True)
@@ -880,6 +931,244 @@ class ShapesWindow(QMainWindow):
                                       "them back." % len(self.canvas.shapes))
         if answer == QMessageBox.StandardButton.Yes:
             self._status("%d shape(s) cleared" % self.canvas.clear_all(), "good")
+
+    # ══════════════════════════════════════════════════════
+    # CLIPBOARD  (copy shapes here, paste them on another image)
+    # ══════════════════════════════════════════════════════
+    def _install_clipboard_bridge(self) -> None:
+        def read_text():
+            board = QApplication.clipboard()
+            return board.text() if board is not None else ""
+
+        def write_text(text):
+            board = QApplication.clipboard()
+            if board is not None:
+                board.setText(text)
+
+        try:
+            clipboard.set_bridge(read_text, write_text)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _to_payload_item(shape) -> dict:
+        item = shape.to_dict()
+        x0, y0, x1, y1 = shape.bounds
+        item["bounds"] = [float(x0), float(y0), float(x1), float(y1)]
+        return item
+
+    @staticmethod
+    def _from_payload_item(item):
+        """A Shape out of anything on the clipboard.  A box copied in
+        LabelImg Master has no `kind`, so it arrives as its bounds and
+        becomes an oriented box with no rotation."""
+        if isinstance(item, dict) and item.get("kind"):
+            try:
+                return Shape.from_dict(item)
+            except Exception:
+                pass
+        try:
+            x0, y0, x1, y1 = [float(v) for v in item["bounds"]]
+        except Exception:
+            return None
+        return Shape.obb(str(item.get("label", "") or ""), (x0 + x1) / 2.0,
+                         (y0 + y1) / 2.0, abs(x1 - x0), abs(y1 - y0), 0.0)
+
+    def copy_shapes(self, cut=False) -> None:
+        if not self.image_ok or not self.canvas.has_image():
+            self._status("Open an image first", "warning")
+            return
+        shapes = self.canvas.selected_shapes()
+        whole = False
+        if not shapes:
+            shapes, whole = list(self.canvas.shapes), True
+        if not shapes:
+            self._status("There is nothing on this image to copy", "warning")
+            return
+        if cut and self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return
+        clipboard.copy(clipboard.KIND_SHAPES,
+                       [self._to_payload_item(s) for s in shapes],
+                       self.canvas.image_size,
+                       source=os.path.basename(self.current_rel() or ""))
+        removed = 0
+        if cut:
+            if whole:
+                removed = self.canvas.clear_all()
+            else:
+                removed = self.canvas.delete_selected()
+        self._sync_actions()
+        self._status("%s %d shape(s)%s  ·  Ctrl+V pastes them onto another image"
+                     % ("Cut" if cut else "Copied", removed if cut else len(shapes),
+                        " (the whole image - nothing was selected)"
+                        if whole and not cut else ""), "good")
+
+    def paste_shapes(self) -> None:
+        if not self._writable_image():
+            return
+        payload = clipboard.content()
+        if not payload or not len(payload):
+            self._status("Nothing has been copied yet - select shapes and press Ctrl+C",
+                         "warning")
+            return
+        items, fx, fy = payload.scale_to(self.canvas.image_size)
+        shapes = [s for s in (self._from_payload_item(i) for i in items) if s is not None]
+        if not shapes:
+            self._status("What was copied cannot become shapes", "warning")
+            return
+        self.ensure_classes({s.label for s in shapes if s.label})
+        added = self.canvas.add_shapes(shapes, "Paste shapes")
+        if not added:
+            self._status("Nothing could be pasted - the shapes fall outside this image",
+                         "warning")
+            return
+        notes = []
+        if abs(fx - 1.0) > 1e-6 or abs(fy - 1.0) > 1e-6:
+            notes.append("scaled to this image")
+        if added < len(shapes):
+            notes.append("%d did not fit" % (len(shapes) - added))
+        if payload.kind != clipboard.KIND_SHAPES:
+            notes.append("from LabelImg Master, as oriented boxes")
+        self._status("Pasted %d shape(s)%s" % (added, "  ·  " + "; ".join(notes)
+                                               if notes else ""),
+                     "warning" if len(notes) > 1 else "good")
+
+    def copy_previous(self) -> None:
+        """Every shape of the image before this one, added to this one."""
+        if not self._writable_image():
+            return
+        if self.index <= 0:
+            self._status("There is no previous image", "warning")
+            return
+        previous = self.images[self.index - 1]
+        result = read_annotation(self.folder, previous)
+        if result.error or not result.shapes:
+            self._status("%s has no shapes to copy" % previous, "warning")
+            return
+        self.ensure_classes({s.label for s in result.shapes})
+        added = self.canvas.add_shapes([s.copy() for s in result.shapes],
+                                       "Add shapes from previous image")
+        self._status("Added %d shape(s) from %s" % (added, previous)
+                     if added else "Nothing from %s fits this image" % previous,
+                     "good" if added else "warning")
+
+    def _writable_image(self) -> bool:
+        if not self.image_ok or not self.canvas.has_image():
+            self._status("Open an image first", "warning")
+            return False
+        if self.read_only:
+            self._status("This folder is open read-only", "warning")
+            return False
+        return True
+
+    # ══════════════════════════════════════════════════════
+    # AI  (Segment Anything)
+    # ══════════════════════════════════════════════════════
+    def ai(self):
+        if self.assistant is None:
+            from annotex.ui.ai_assist import SamAssistant
+            self.assistant = SamAssistant(self.settings, self)
+            self.assistant.stateChanged.connect(self._status)
+            self.assistant.ready.connect(lambda _t: self._on_ai_ready())
+            self.assistant.failed.connect(self._on_ai_failed)
+        return self.assistant
+
+    def _on_ai_ready(self) -> None:
+        self.canvas.set_ai_preview(self.canvas.ai_preview, busy=False)
+        if self.canvas.has_ai_prompt():
+            self.refresh_ai_preview()
+
+    def _on_ai_failed(self, message) -> None:
+        self.canvas.set_ai_preview(None, busy=False)
+        self._status(str(message).replace("\n", "  "), "danger")
+
+    def enter_ai_tool(self) -> bool:
+        if not self._writable_image():
+            return False
+        assistant = self.ai()
+        ok, why = assistant.usable()
+        if not ok:
+            self._status(str(why).replace("\n", "  "), "warning")
+            QMessageBox.information(self, "AI select", why)
+            self.open_ai_model()
+            ok, _why = assistant.usable()
+            if not ok:
+                return False
+        rel = self.current_rel()
+        if rel is None:
+            return False
+        pixmap = self.canvas.pixmap
+        image = pixmap.toImage() if pixmap is not None else None
+        if image is None or image.isNull():
+            self._status("This image cannot be handed to the model", "warning")
+            return False
+        assistant.prepare(assistant.token_for(os.path.join(self.folder, rel)), image)
+        self.canvas.set_ai_preview(None, busy=assistant.is_busy())
+        return True
+
+    def refresh_ai_preview(self) -> None:
+        canvas = self.canvas
+        if canvas.tool != T_AI:
+            return
+        points, box = canvas.ai_prompt()
+        if not points and box is None:
+            canvas.set_ai_preview(None)
+            return
+        assistant = self.ai()
+        canvas.set_ai_preview(canvas.ai_preview, busy=True)
+        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        try:
+            result, why = assistant.predict(points, box)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if result is None:
+            canvas.set_ai_preview(None, busy=assistant.is_busy())
+            self._status(str(why).replace("\n", "  "), "warning")
+            return
+        try:
+            tolerance = float(self.settings.get("ai_smoothing", 1.2))
+        except (TypeError, ValueError):
+            tolerance = 1.2
+        points_out = assistant.polygon_from(result, tolerance=tolerance)
+        if len(points_out) < 3:
+            canvas.set_ai_preview(None)
+            self._status("The AI found nothing there - click the object itself, or "
+                         "right-click to exclude part of it", "warning")
+            return
+        canvas.set_ai_preview(points_out)
+        self._status("AI outline of %d points  ·  Enter keeps it, more clicks refine "
+                     "it, Esc drops it" % len(points_out), "info")
+
+    def accept_ai_preview(self) -> None:
+        canvas = self.canvas
+        if not canvas.ai_preview:
+            self._status("Click the object first", "warning")
+            return
+        if self.settings.get("skip_label_dialog", True) and self.current_class:
+            label = self.current_class
+        else:
+            label = self.ask_label(self.current_class or "", "Class for the AI shape")
+            if not label:
+                self._status("Proposal dropped - no class chosen", "info")
+                return
+        shape = Shape.polygon(label, list(canvas.ai_preview), KIND_POLYGON)
+        if not canvas.add_shape(shape, "AI polygon"):
+            return
+        if self.settings.get("sticky_class", True):
+            self.set_current_class(label, announce=False)
+        if not self.settings.get("ai_keep_prompt", False):
+            canvas.clear_ai(quiet=True)
+        self._status("AI polygon added as %s  ·  click the next object" % label, "good")
+
+    def open_ai_model(self) -> None:
+        dialog = AiModelDialog(self, self.ai(), self.theme)
+        dialog.exec()
+        if dialog.changed:
+            self.canvas.set_ai_preview(None)
+            if self.canvas.tool == T_AI and not self.enter_ai_tool():
+                self.set_tool(T_SELECT)
+            self._sync_actions()
 
     # ══════════════════════════════════════════════════════
     # SAVING
@@ -1006,6 +1295,10 @@ class ShapesWindow(QMainWindow):
             self.act(action_id).setEnabled(has_batch)
         for action_id in ("save", "verify", "select_all", "clear_all"):
             self.act(action_id).setEnabled(writable)
+        self.act("copy_shapes").setEnabled(has_image and bool(self.canvas.shapes))
+        self.act("cut_shapes").setEnabled(writable and bool(self.canvas.shapes))
+        self.act("paste_shapes").setEnabled(writable and clipboard.count() > 0)
+        self.act("copy_previous").setEnabled(writable and self.index > 0)
         for action_id in ("edit_class", "duplicate", "delete", "rotate_left", "rotate_right"):
             self.act(action_id).setEnabled(writable and selection)
         for action_id in ("zoom_in", "zoom_out", "zoom_fit", "zoom_selection"):
@@ -1058,6 +1351,9 @@ class ShapesWindow(QMainWindow):
             self.settings.save()
             self.class_store.save()
             self.filmstrip.shutdown()
+            if self.assistant is not None:
+                self.assistant.shutdown()
+            self.app.removeEventFilter(self)
             self.lock.release()
         except Exception:
             traceback.print_exc()

@@ -74,3 +74,48 @@ def overrides_from(actions, keys) -> dict:
         if key != default:
             out[action_id] = key
     return out
+
+
+# ══════════════════════════════════════════════════════════════
+# TEXT FIELDS KEEP THEIR OWN EDITING KEYS
+# ══════════════════════════════════════════════════════════════
+_EDITING_KEYS = None
+
+
+def _editing_keys():
+    """The standard editing sequences, resolved for this platform.
+
+    Built once, and lazily, so importing this module costs nothing."""
+    global _EDITING_KEYS
+    if _EDITING_KEYS is None:
+        from PySide6.QtGui import QKeySequence as _K
+        wanted = (_K.StandardKey.Copy, _K.StandardKey.Cut, _K.StandardKey.Paste,
+                  _K.StandardKey.SelectAll, _K.StandardKey.Undo, _K.StandardKey.Redo,
+                  _K.StandardKey.Delete, _K.StandardKey.DeleteStartOfWord,
+                  _K.StandardKey.DeleteEndOfWord)
+        keys = set()
+        for standard in wanted:
+            for sequence in _K.keyBindings(standard):
+                keys.add(sequence.toString(_K.SequenceFormat.PortableText))
+        _EDITING_KEYS = keys
+    return _EDITING_KEYS
+
+
+def steals_from_text_field(event, focus, text_types) -> bool:
+    """True when a window shortcut is about to swallow a key a text field
+    needs.
+
+    Ctrl+C in a search box must copy the text, not the annotator's boxes;
+    Ctrl+A must select the text, not every shape on the image.  Qt gives
+    window shortcuts priority over the focused widget, so the window answers
+    the ShortcutOverride event for these keys and lets the field have them.
+    """
+    if focus is None or not isinstance(focus, tuple(text_types)):
+        return False
+    try:
+        from PySide6.QtGui import QKeySequence as _K
+        combination = event.keyCombination()
+        pressed = _K(combination).toString(_K.SequenceFormat.PortableText)
+    except Exception:
+        return False
+    return bool(pressed) and pressed in _editing_keys()

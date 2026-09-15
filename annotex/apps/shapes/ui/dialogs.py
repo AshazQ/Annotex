@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QLabel, QRadioButton,
-                               QSlider, QSpinBox)
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QLabel, QMessageBox,
+                               QPushButton, QRadioButton, QSlider, QSpinBox)
 
 from annotex.ui.dialogs.common import Dialog, card, hint, row
 from annotex.ui.theme_picker import ThemeCombo
@@ -108,6 +108,30 @@ class ShapesSettingsDialog(Dialog):
         inner.addWidget(self.sticky)
         self.body.addWidget(frame)
 
+        frame, inner = card("AI (Segment Anything)")
+        self.model_label = QLabel("")
+        self.model_label.setWordWrap(True)
+        inner.addWidget(self.model_label)
+        choose = QPushButton("Choose the model…")
+        choose.clicked.connect(self._choose_model)
+        inner.addWidget(row(choose, None))
+        self.ai_keep = QCheckBox("Keep the clicks after a shape is added")
+        self.ai_keep.setChecked(bool(settings.get("ai_keep_prompt", False)))
+        inner.addWidget(self.ai_keep)
+        self.smoothing = QSlider(Qt.Orientation.Horizontal)
+        self.smoothing.setRange(2, 60)
+        self.smoothing.setValue(int(round(float(settings.get("ai_smoothing", 1.2)) * 10)))
+        self.smoothing_value = QLabel("")
+        self.smoothing.valueChanged.connect(
+            lambda v: self.smoothing_value.setText("%.1f px" % (v / 10.0)))
+        self.smoothing_value.setText("%.1f px" % (self.smoothing.value() / 10.0))
+        inner.addWidget(row("Outline smoothing", self.smoothing, self.smoothing_value))
+        inner.addWidget(hint("Press S for the AI tool and click the object; the outline "
+                             "is proposed as a polygon and Enter keeps it.  More "
+                             "smoothing means fewer points to edit."))
+        self.body.addWidget(frame)
+        self._refresh_model_label()
+
         self.add_button("Cancel", slot=self.reject)
         self.add_button("Save", primary=True, slot=self.accept)
 
@@ -116,6 +140,26 @@ class ShapesSettingsDialog(Dialog):
         box.setChecked(bool(self.settings.get(key, True)))
         return box
 
+    def _refresh_model_label(self) -> None:
+        import os
+        encoder = str(self.settings.get("sam_encoder", "") or "")
+        decoder = str(self.settings.get("sam_decoder", "") or "")
+        if encoder and decoder:
+            self.model_label.setText("Model:  %s  +  %s" % (os.path.basename(encoder),
+                                                            os.path.basename(decoder)))
+            self.model_label.setToolTip("%s\n%s" % (encoder, decoder))
+        else:
+            self.model_label.setText("No model chosen yet - the AI tool is off.")
+
+    def _choose_model(self) -> None:
+        window = self.parent()
+        if window is not None and hasattr(window, "open_ai_model"):
+            window.open_ai_model()
+        else:                                         # pragma: no cover
+            QMessageBox.information(self, "AI model",
+                                    "Open this from the tool's Settings button.")
+        self._refresh_model_label()
+
     def result_values(self) -> dict:
         return {"theme": self.theme_box.currentData(),
                 "fill_opacity": self.opacity.value(),
@@ -123,4 +167,6 @@ class ShapesSettingsDialog(Dialog):
                 "show_labels": self.show_labels.isChecked(),
                 "show_crosshair": self.show_crosshair.isChecked(),
                 "skip_label_dialog": self.skip_dialog.isChecked(),
-                "sticky_class": self.sticky.isChecked()}
+                "sticky_class": self.sticky.isChecked(),
+                "ai_keep_prompt": self.ai_keep.isChecked(),
+                "ai_smoothing": self.smoothing.value() / 10.0}

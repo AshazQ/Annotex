@@ -12,7 +12,6 @@ APP_TAGLINE = "Bounding-box labelling and review"
 # ── files written beside the images ───────────────────────────
 LOCK_NAME = ".labelimg.lock"
 DRAFT_NAME = ".labelimg_draft.json"
-AUDIT_NAME = ".labelimg_audit.jsonl"
 PROJECT_SETTINGS_NAME = ".labelimg.json"
 VERIFIED_LEDGER_NAME = ".labelimg_verified.json"
 BACKUP_DIR = ".labelimg_backup"
@@ -81,6 +80,11 @@ DEFAULT_SETTINGS = {
     "shortcuts": {},
     "last_class": "",
     "class_project": "",
+    # AI (Segment Anything).  Empty until a model is chosen; the tool is
+    # simply off until then.
+    "sam_encoder": "",
+    "sam_decoder": "",
+    "ai_keep_prompt": False,         # keep the clicks after accepting a box
 }
 
 # Settings a batch folder may carry for everyone who opens it.
