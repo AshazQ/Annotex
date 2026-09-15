@@ -278,7 +278,8 @@ class ShapesWindow(QMainWindow):
 
         self.edit_bar, edit_row = self._dock()
         self.edit_buttons = {}
-        for action_id in ("undo", "redo", "duplicate", "delete"):
+        for action_id in ("undo", "redo", "duplicate", "copy_shapes", "paste_shapes",
+                          "delete"):
             button = self._button_for(action_id)
             self.edit_buttons[action_id] = button
             edit_row.addWidget(button)
@@ -357,6 +358,7 @@ class ShapesWindow(QMainWindow):
     def _build_statusbar(self) -> None:
         bar = QStatusBar()
         bar.setSizeGripEnabled(False)
+        bar.setContentsMargins(6, 0, 12, 0)   # the last chip is not clipped
         self.setStatusBar(bar)
         self.status_label = QLabel("")
         self.status_label.setObjectName("Hint")

@@ -87,6 +87,16 @@ def main():
     except SamError as exc:
         ok("a missing file is refused with a sentence", "missing" in str(exc))
 
+    corrupt = os.path.join(models, "corrupt.encoder.onnx")
+    with open(corrupt, "wb") as handle:
+        handle.write(b"this is not a model at all")
+    try:
+        SamRuntime(corrupt, decoder).load()
+        ok("a file that is not a model is refused with a sentence", False)
+    except SamError as exc:
+        ok("a file that is not a model is refused with a sentence",
+           "SAM ONNX export" in str(exc))
+
     # ── encode and predict ────────────────────────────────
     width, height = 400, 250
     target = runtime.target_size(width, height)
@@ -198,8 +208,23 @@ def main():
     window.canvas.clear_ai()
     window.ai().set_model(os.path.join(models, "gone.onnx"),
                           os.path.join(models, "gone2.onnx"), "broken")
-    ok("a broken model turns the tool off instead of crashing",
+    ok("a missing model turns the tool off instead of crashing",
        not window.enter_ai_tool())
+
+    # a model whose files exist but are rubbish fails in the background,
+    # where it can only produce a message
+    window.ai().set_model(corrupt, decoder, "corrupt")
+    window._ai_offered = True
+    window.enter_ai_tool()
+    for _ in range(200):
+        app.processEvents()
+        if not window.ai().is_busy():
+            break
+    ok("a corrupt model says so instead of crashing",
+       "not a model" in window.status_label.text().lower()
+       or "could not be opened" in window.status_label.text().lower()
+       or "sam onnx export" in window.status_label.text().lower())
+    ok("and nothing is left half-prepared", not window.ai().is_busy())
     window.set_tool(BOX_SELECT)
     window.tool_close()
 
@@ -228,6 +253,37 @@ def main():
        len(shapes.canvas.shapes) == 1 and shapes.canvas.shapes[0].kind == "polygon")
     ok("the polygon takes the active class", shapes.canvas.shapes[0].label == "leaf")
     shapes.tool_close()
+
+    # ── the picture that reaches the model is the picture ──
+    # A numpy array built straight on QImage.constBits() does not keep the
+    # image alive: it read freed memory, which showed up as a model that
+    # "worked" on garbage and, on bigger images, as a crash.
+    import gc
+
+    from annotex.ui.ai_assist import qimage_to_rgb, scaled_rgb
+    wrong = []
+    for size in ((1, 1), (2, 1), (3, 2), (7, 5), (33, 17), (640, 480), (1024, 768)):
+        picture = QImage(size[0], size[1], QImage.Format.Format_RGB32)
+        picture.fill(QColor(10, 20, 30))
+        array = qimage_to_rgb(picture)
+        del picture
+        gc.collect()
+        if array is None or array.shape != (size[1], size[0], 3) \
+                or not (array[:, :, 0] == 10).all() or not (array[:, :, 1] == 20).all() \
+                or not (array[:, :, 2] == 30).all():
+            wrong.append("%dx%d" % size)
+    ok("every image reaches the model unchanged, at any width", not wrong)
+    if wrong:
+        print("      wrong at: %s" % ", ".join(wrong))
+    picture = QImage(300, 200, QImage.Format.Format_RGB32)
+    picture.fill(QColor(7, 8, 9))
+    small = scaled_rgb(picture, 64, 48)
+    del picture
+    gc.collect()
+    ok("and so does a resized one",
+       small is not None and small.shape == (48, 64, 3) and (small == [7, 8, 9]).all())
+    ok("an empty image is refused rather than guessed at",
+       qimage_to_rgb(QImage()) is None and scaled_rgb(None, 8, 8) is None)
 
     print("=" * 60)
     if FAILS:

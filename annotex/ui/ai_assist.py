@@ -34,9 +34,11 @@ PREDICT_MAX_SIDE = 1024          # mask resolution asked of the model
 def qimage_to_rgb(image: QImage):
     """A QImage as an (h, w, 3) uint8 numpy array, or None.
 
-    Qt rows are padded to a four-byte boundary, so the stride has to be
-    respected - reshaping by width alone shears the picture on any width
-    that is not a multiple of four."""
+    Two things matter here.  Qt rows are padded to a four-byte boundary, so
+    the stride has to be respected - reshaping by width alone shears the
+    picture on any width that is not a multiple of four.  And the pixels are
+    copied out of Qt's buffer immediately: the array must own its memory, or
+    it is reading whatever Qt did with that memory next."""
     try:
         import numpy as np
     except Exception:
@@ -48,8 +50,24 @@ def qimage_to_rgb(image: QImage):
         width, height = converted.width(), converted.height()
         stride = converted.bytesPerLine()
         raw = converted.constBits()
-        buffer = memoryview(raw).cast("B")
-        flat = np.frombuffer(buffer, dtype=np.uint8, count=stride * height)
+        # Bindings have handed this back as a memoryview, a sip voidptr and a
+        # bytes object over the years; take whichever one works.
+        buffer = None
+        for attempt in (lambda: memoryview(raw).cast("B"),
+                        lambda: memoryview(raw),
+                        lambda: bytes(raw)):
+            try:
+                buffer = attempt()
+                break
+            except Exception:
+                continue
+        if buffer is None:
+            return None
+        # Copy out of Qt's memory before doing anything else.  A numpy array
+        # built straight on constBits() does not keep the QImage alive, and
+        # reading it afterwards is at best garbage and at worst a crash.
+        owned = bytearray(buffer[:stride * height])
+        flat = np.frombuffer(owned, dtype=np.uint8, count=stride * height)
         return np.ascontiguousarray(flat.reshape(height, stride)[:, :width * 3]
                                     .reshape(height, width, 3))
     except Exception:
@@ -78,13 +96,16 @@ class _JobSignals(QObject):
 
 
 class _EncodeJob(QRunnable):
-    """Load the model if it is not loaded, then encode one image."""
+    """Everything slow about a new image, off the interface thread.
 
-    def __init__(self, runtime, rgb, orig_size, token, signals):
+    Opening the model (seconds, the first time), resizing the picture to what
+    the model wants, and running the encoder all happen here, so the window
+    never freezes while somebody is waiting to click."""
+
+    def __init__(self, runtime, image, token, signals):
         super().__init__()
         self.runtime = runtime
-        self.rgb = rgb
-        self.orig_size = orig_size
+        self.image = image
         self.token = token
         self.signals = signals
         self.setAutoDelete(True)
@@ -96,13 +117,24 @@ class _EncodeJob(QRunnable):
             self.signals.failed.emit(self.token, str(exc))
             return
         try:
-            embedding = self.runtime.encode(self.rgb, self.orig_size, self.token)
+            if not self.runtime.loaded:
+                self.runtime.load()
+            width, height = self.image.width(), self.image.height()
+            if not width or not height:
+                raise ValueError("the image is empty")
+            target_w, target_h = self.runtime.target_size(width, height)
+            rgb = scaled_rgb(self.image, target_w, target_h)
+            if rgb is None:
+                raise ValueError("the image could not be converted for the model")
+            embedding = self.runtime.encode(rgb, (height, width), self.token)
         except SamError as exc:
             self.signals.failed.emit(self.token, str(exc))
             return
         except Exception as exc:                        # never let a thread die loudly
             self.signals.failed.emit(self.token, "the model failed on this image: %s" % exc)
             return
+        finally:
+            self.image = None
         self.signals.done.emit(self.token, embedding)
 
 
@@ -259,26 +291,19 @@ class SamAssistant(QObject):
             return True
         if self._pending == token:
             return False
+        if image is None or image.isNull():
+            self.failed.emit("this image could not be read")
+            return False
         try:
             runtime = self._ensure_runtime()
-            width, height = image.width(), image.height()
-            if not width or not height:
-                raise ValueError("the image is empty")
-            if not runtime.loaded:
-                self.stateChanged.emit("Loading %s…" % (self.model_name() or "the model"),
-                                       "info")
-                runtime.load()
-            target_w, target_h = runtime.target_size(width, height)
-            rgb = scaled_rgb(image, target_w, target_h)
-            if rgb is None:
-                raise ValueError("the image could not be converted")
         except Exception as exc:
-            self._pending = ""
             self.failed.emit(str(exc))
             return False
         self._pending = token
-        self.stateChanged.emit("Preparing this image for the AI…", "info")
-        self._pool.start(_EncodeJob(runtime, rgb, (height, width), token, self._signals))
+        self.stateChanged.emit(
+            "Loading %s and preparing this image…" % (self.model_name() or "the model")
+            if not runtime.loaded else "Preparing this image for the AI…", "info")
+        self._pool.start(_EncodeJob(runtime, image, token, self._signals))
         return False
 
     def _remember(self, token, embedding) -> None:

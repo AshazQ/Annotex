@@ -1185,7 +1185,7 @@ class ShapeCanvas(ImageViewport):
             painter.setBrush(QBrush(fill))
             painter.drawPolygon(polygon)
             painter.setPen(QPen(qcolor(self._colours["label"])))
-            painter.drawText(polygon.boundingRect().bottomLeft() + QPointF(2, 15),
+            painter.drawText(self._hint_point(polygon.boundingRect()),
                              "Enter to keep  ·  Esc to drop")
 
         for x, y, positive in self.ai_points:
@@ -1204,6 +1204,14 @@ class ShapeCanvas(ImageViewport):
             painter.drawText(self.rect().adjusted(12, 10, -12, 0),
                              Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
                              "AI thinking…")
+
+    def _hint_point(self, rect) -> QPointF:
+        """Just under the proposal, but never off the bottom of the view."""
+        x = min(max(rect.left() + 2.0, 4.0), max(4.0, self.width() - 190.0))
+        y = rect.bottom() + 15.0
+        if y > self.height() - 4:
+            y = max(14.0, rect.top() - 6.0)
+        return QPointF(x, y)
 
     def _paint_marquee(self, painter) -> None:
         if self._marquee.isEmpty():

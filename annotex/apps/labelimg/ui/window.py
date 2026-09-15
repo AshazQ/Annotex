@@ -398,7 +398,7 @@ class LabelImgWindow(QMainWindow):
         self.quick_bar, quick = self._dock()
         self.quick_buttons = {}
         for action_id in ("undo", "redo", "delete_box", "duplicate_box",
-                          "append_previous", "clear_all"):
+                          "copy_boxes", "paste_boxes", "append_previous", "clear_all"):
             button = self._tool_button(action_id)
             button.clicked.connect(self.act(action_id).trigger)
             self.quick_buttons[action_id] = button
@@ -469,6 +469,7 @@ class LabelImgWindow(QMainWindow):
         foot.addLayout(format_row)
         self.save_dir_label = QLabel("")
         self.save_dir_label.setObjectName("Subtitle")
+        self.save_dir_label.setWordWrap(True)
         foot.addWidget(self.save_dir_label)
 
         self.save_button = QPushButton("Save")
@@ -501,6 +502,7 @@ class LabelImgWindow(QMainWindow):
     def _build_statusbar(self) -> None:
         bar = QStatusBar()
         bar.setSizeGripEnabled(False)
+        bar.setContentsMargins(6, 0, 12, 0)   # the last chip is not clipped
         self.setStatusBar(bar)
         self.status_label = QLabel("")
         self.status_label.setObjectName("Hint")
