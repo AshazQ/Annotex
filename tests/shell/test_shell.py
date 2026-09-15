@@ -142,17 +142,50 @@ try:
     resume = [c for c in shell.home.continue_cards if c.session.tool_id == "labelimg"]
     ok("Home offers to continue the LabelImg folder", bool(resume) and resume[0].session.folder == folder)
     ok("and shows how far along it is", bool(resume) and (resume[0].session.total, resume[0].session.done) == (2, 1))
+    from PySide6.QtWidgets import QPushButton
+
+    def recent_buttons(card):
+        found = []
+        for i in range(card.recent_box.count()):
+            holder = card.recent_box.itemAt(i).widget()
+            if holder is not None:
+                found += holder.findChildren(QPushButton)
+        return found
+
     labelimg_card = [card for card in shell.home.cards if card.spec.id == "labelimg"][0]
-    links = [labelimg_card.recent_box.itemAt(i).widget()
-             for i in range(labelimg_card.recent_box.count())]
-    ok("Home lists the recent folder", any(folder == (link.toolTip() if link else "")
-                                           for link in links))
+    ok("Home lists the recent folder",
+       any(button.toolTip() == folder for button in recent_buttons(labelimg_card)))
     if OUT:
         shell.grab().save(os.path.join(OUT, "shell_home_after.png"))
+
+    # ── removing a folder from Home's recent list ─────────
+    from annotex.apps.labelimg.config import Settings as LabelImgSettings
+    removes = [b for b in recent_buttons(labelimg_card) if b.text() == "✕"]
+    ok("every recent folder has a remove button", len(removes) >= 1)
+    ok("each Continue card has a remove button",
+       all(card.remove.text() == "✕" and card.remove.toolTip() for card in shell.home.continue_cards))
+    ok("the LabelImg page is still open with the folder in its list",
+       "labelimg" in shell.pages and folder in shell.pages["labelimg"].settings.get("recent_folders"))
+    removes[0].click()
+    app.processEvents()
+    labelimg_card = [card for card in shell.home.cards if card.spec.id == "labelimg"][0]
+    ok("the removed folder leaves the tool card",
+       not any(button.toolTip() == folder for button in recent_buttons(labelimg_card)))
+    ok("and the Continue strip",
+       not any(c.session.folder == folder for c in shell.home.continue_cards))
+    ok("and the settings on disk", folder not in (LabelImgSettings().get("recent_folders") or []))
+    ok("and the open tool's own copy",
+       folder not in (shell.pages["labelimg"].settings.get("recent_folders") or []))
+    ok("the folder itself is untouched", os.path.isdir(folder))
+    forgot = True
 finally:
     shell.close()
     app.processEvents()
     ok("closing released the LabelImg lock", not os.path.isfile(os.path.join(folder, ".labelimg.lock")))
+    if "forgot" in globals():
+        from annotex.apps.labelimg.config import Settings as LabelImgSettings
+        ok("closing the tool does not bring the removed folder back",
+           folder not in (LabelImgSettings().get("recent_folders") or []))
     shutil.rmtree(SANDBOX, ignore_errors=True)
 
 print("=" * 60)

@@ -465,11 +465,14 @@ class ShapesWindow(QMainWindow):
     # KEYS THE REGISTRY CANNOT HOLD
     # ══════════════════════════════════════════════════════
     def eventFilter(self, obj, event):
-        """Let a focused text field keep Ctrl+C, Ctrl+V and Ctrl+A.
+        """Let a focused text field keep Ctrl+C, Ctrl+V and Ctrl+A, and let the
+        keys that finish a shape work wherever the focus is.
 
         Qt hands window shortcuts the key first, so without this the class
         search box could not be copied out of."""
         try:
+            if event.type() == QEvent.Type.KeyPress:
+                return self._route_canvas_key(obj, event)
             if event.type() != QEvent.Type.ShortcutOverride or not self.isVisible():
                 return False
             if QApplication.activeModalWidget() is not None:
@@ -482,6 +485,23 @@ class ShapesWindow(QMainWindow):
         except Exception:
             return False
         return False
+
+    def _route_canvas_key(self, obj, event) -> bool:
+        """Enter keeps, Esc drops, Backspace and Ctrl+Z take back - for the
+        polygon or AI proposal in progress - even after a click on the class
+        list, the shape list or the filmstrip moved the focus off the canvas.
+        Without this those keys went to that widget and did nothing."""
+        if not self.isVisible() or QApplication.activeModalWidget() is not None \
+                or QApplication.activePopupWidget() is not None:
+            return False
+        focus = QApplication.focusWidget()
+        if focus is None or obj is not focus or focus is self.canvas:
+            return False                     # the canvas handles its own keys
+        if focus is not self and not self.isAncestorOf(focus):
+            return False
+        if isinstance(focus, TEXT_INPUTS):
+            return False                     # typing in the class search stays typing
+        return self.canvas.handle_pending_key(event)
 
     # ══════════════════════════════════════════════════════
     # THEME & SETTINGS
@@ -893,8 +913,20 @@ class ShapesWindow(QMainWindow):
                                     self.canvas.selected_indices())
 
     def undo(self) -> None:
-        if self.canvas.is_drawing():
-            self.canvas.cancel_draft()
+        canvas = self.canvas
+        # Mid-shape, Ctrl+Z takes back one click - the last polygon point or
+        # AI prompt - rather than the whole shape.  Once there is nothing left
+        # to take back it undoes finished shapes as usual.
+        if canvas.tool == T_AI and canvas.undo_ai_point():
+            self._status("Last AI click undone", "info")
+            return
+        if canvas.undo_draft_point():
+            left = len(canvas._draft)
+            self._status("Last point removed  ·  %d left" % left if left
+                         else "Last point removed - the shape is empty", "info")
+            return
+        if canvas.is_drawing():
+            canvas.cancel_draft()
             return
         step = self.history.undo()
         if step is None:
@@ -1113,7 +1145,7 @@ class ShapesWindow(QMainWindow):
                 self._ai_offered = True
                 answer = QMessageBox.question(
                     self, "AI select",
-                    "%s\n\nChoose a model now?" % why,
+                    "%s\n\nDownload or choose a model now?" % why,
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes)
                 if answer == QMessageBox.StandardButton.Yes:

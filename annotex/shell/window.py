@@ -66,6 +66,7 @@ class ShellWindow(QMainWindow):
         self.home = HomePage(self.tools)
         self.home.openRequested.connect(lambda tool_id: self.open_tool(tool_id))
         self.home.folderRequested.connect(self._open_tool_folder)
+        self.home.forgetRequested.connect(self.forget_folder)
         self.home.themeToggleRequested.connect(self.toggle_theme)
         self.stack.addWidget(self.home)
 
@@ -255,6 +256,29 @@ class ShellWindow(QMainWindow):
             if not folder:
                 return
         self.open_tool(tool_id, folder)
+
+    def forget_folder(self, tool_id, folder) -> None:
+        """Take a folder off a tool's recent list (Home's remove buttons)."""
+        from .registry import forget_in
+        # An open tool holds its own copy of the list and saves it when it
+        # closes, so change that copy first or the folder comes straight back.
+        page = self.pages.get(tool_id)
+        settings = getattr(page, "settings", None)
+        if settings is not None:
+            try:
+                forget_in(settings, folder)
+                rebuild = getattr(page, "_rebuild_recent", None)
+                if rebuild is not None:
+                    rebuild()
+            except Exception:
+                pass
+        spec = next((s for s in self.tools if s.id == tool_id), None)
+        if spec is not None and spec.forget is not None:
+            try:
+                spec.forget(folder)
+            except Exception:
+                pass
+        self.home.refresh()
 
     def go_home(self) -> None:
         if self.stack.currentWidget() is self.home:

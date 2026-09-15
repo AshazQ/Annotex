@@ -76,8 +76,10 @@ def build_decoder(path, awkward_order=False):
     outputs = [
         helper.make_tensor_value_info("masks", TensorProto.FLOAT, [1, 3, "h", "w"]),
         helper.make_tensor_value_info("iou_predictions", TensorProto.FLOAT, [1, 3]),
+        helper.make_tensor_value_info("low_res_masks", TensorProto.FLOAT, [1, 3, 256, 256]),
     ]
     consts = [
+        numpy_helper.from_array(np.array([1, 3, 256, 256], dtype=np.int64), name="low_shape"),
         numpy_helper.from_array(np.array([1, 3], dtype=np.int64), name="lead"),
         numpy_helper.from_array(np.array([0.2, 0.9, 0.4], dtype=np.float32).reshape(1, 3),
                                 name="iou"),
@@ -104,6 +106,10 @@ def build_decoder(path, awkward_order=False):
         helper.make_node("Where", ["any_positive", "strength", "minus"], ["sign"]),
         helper.make_node("Mul", ["ones", "sign"], ["masks"]),
         helper.make_node("Identity", ["iou"], ["iou_predictions"]),
+        # low_res_masks = mask_input + has_mask_input, so a test can see that
+        # the previous answer really was fed back: each refined click counts up.
+        helper.make_node("Expand", ["mask_input", "low_shape"], ["low_expanded"]),
+        helper.make_node("Add", ["low_expanded", "has_mask_input"], ["low_res_masks"]),
     ]
     if awkward_order:
         inputs = list(reversed(inputs))

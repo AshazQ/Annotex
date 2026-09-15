@@ -150,6 +150,26 @@ def main():
        other.predict(other.encode(np.full((40, 64, 3), 255, np.uint8), (250, 400)),
                      points=[(5, 5, True)])[0].any())
 
+    # ── a second click refines the first answer ───────────
+    refiner = SamRuntime(encoder, decoder, "refine")
+    refiner.load()
+    square = refiner.encode(np.full((64, 64, 3), 128, np.uint8), (64, 64))
+    refiner.predict(square, points=[(5, 5, True)])
+    first = refiner.last_low_res
+    ok("an answer keeps its low-res mask for the next click",
+       first is not None and tuple(first.shape) == (1, 1, 256, 256))
+    refiner.predict(square, points=[(5, 5, True), (9, 9, True)], refine=first)
+    ok("the next click is fed the previous answer",
+       refiner.last_low_res is not None
+       and abs(float(refiner.last_low_res.mean()) - (float(first.mean()) + 1.0)) < 1e-6)
+    refiner.predict(square, points=[(5, 5, True)])
+    ok("without it the model starts from nothing",
+       abs(float(refiner.last_low_res.mean())) < 1e-6)
+    refiner.predict(square, points=[(5, 5, True)], refine=np.zeros(7, np.float32))
+    ok("a previous answer of the wrong size is ignored, not fed in",
+       abs(float(refiner.last_low_res.mean())) < 1e-6)
+    refiner.unload()
+
     # ── the assistant, in a real window ───────────────────
     from PySide6.QtGui import QColor, QImage
     from PySide6.QtCore import QPointF
@@ -195,6 +215,14 @@ def main():
     window.canvas._add_ai_point(QPointF(160, 120), positive=True)
     app.processEvents()
     ok("a click proposes a box", window.canvas.ai_preview is not None)
+    ok("the first click starts from nothing", window.ai().last_refined is False)
+    window.canvas._add_ai_point(QPointF(170, 125), positive=True)
+    app.processEvents()
+    ok("a second click refines the first answer", window.ai().last_refined is True)
+    window.canvas.undo_ai_point()
+    app.processEvents()
+    ok("taking a click back starts again from nothing",
+       window.ai().last_refined is False and window.canvas.ai_preview is not None)
     ok("nothing is added until it is accepted", not window.canvas.boxes)
     window.accept_ai_preview()
     ok("Enter keeps the proposal", len(window.canvas.boxes) == 1)
@@ -238,6 +266,96 @@ def main():
        or "could not be opened" in window.status_label.text().lower()
        or "sam onnx export" in window.status_label.text().lower())
     ok("and nothing is left half-prepared", not window.ai().is_busy())
+
+    # ── one click downloads a model, the LabelMe way ──────
+    import hashlib
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from PySide6.QtWidgets import QDialog
+    from annotex.core.ai import catalog
+
+    served = {}
+    with open(encoder, "rb") as handle:
+        served["/downloaded_sam.encoder.onnx"] = handle.read()
+    with open(decoder, "rb") as handle:
+        served["/downloaded_sam.decoder.onnx"] = handle.read()
+
+    class Serve(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = served.get(self.path)
+            if body is None:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Serve)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = "http://127.0.0.1:%d" % server.server_address[1]
+
+    def served_file(name):
+        body = served.get("/" + name, b"x")
+        return catalog.RemoteFile(base + "/" + name, len(body), hashlib.sha256(body).hexdigest())
+
+    def wait_for(dialog):
+        for _ in range(1000):
+            app.processEvents()
+            if not dialog.downloading:
+                return
+            time.sleep(0.01)
+
+    real_catalog = catalog.CATALOG
+    try:
+        catalog.CATALOG = [catalog.CatalogModel(
+            "gone_sam", "Gone SAM", "for tests",
+            served_file("gone.encoder.onnx"), served_file("gone.decoder.onnx"))]
+        window.ai().set_model("", "")
+        failed = AiModelDialog(window, window.ai(), window.theme)
+        failed.start_download()
+        wait_for(failed)
+        ok("a download that fails leaves the dialog usable",
+           not failed.downloading and failed.list.isEnabled() and not failed.changed)
+        ok("and no model is set", not window.ai().configured())
+        failed.deleteLater()
+
+        catalog.CATALOG = [catalog.CatalogModel(
+            "downloaded_sam", "Downloaded SAM", "for tests",
+            served_file("downloaded_sam.encoder.onnx"),
+            served_file("downloaded_sam.decoder.onnx"))]
+        dialog = AiModelDialog(window, window.ai(), window.theme)
+        ok("the dialog offers the model to download",
+           dialog.catalog_box.count() == 1 and dialog.download_button.text() == "Download")
+        dialog.start_download()
+        ok("a running download locks the rest of the dialog",
+           dialog.downloading and not dialog.list.isEnabled())
+        wait_for(dialog)
+        ok("a finished download is used straight away",
+           window.ai().configured() and dialog.changed
+           and dialog.result() == QDialog.DialogCode.Accepted)
+        ok("under the model's own name", window.ai().model_name() == "Downloaded SAM")
+        ok("from the model folder",
+           os.path.dirname(window.ai().chosen_paths()[0]) == dialog.folder)
+        dialog.deleteLater()
+        again = AiModelDialog(window, window.ai(), window.theme)
+        ok("a downloaded model is marked, not fetched again",
+           "downloaded" in again.catalog_box.itemText(0)
+           and again.download_button.text() == "Use it")
+        again.deleteLater()
+        window._ai_offered = True
+        ok("and the AI tool turns on with it", window.enter_ai_tool())
+        for _ in range(200):
+            app.processEvents()
+            if not window.ai().is_busy():
+                break
+    finally:
+        catalog.CATALOG = real_catalog
+        server.shutdown()
     window.set_tool(BOX_SELECT)
     window.tool_close()
 
@@ -265,6 +383,56 @@ def main():
     ok("the outline becomes a polygon",
        len(shapes.canvas.shapes) == 1 and shapes.canvas.shapes[0].kind == "polygon")
     ok("the polygon takes the active class", shapes.canvas.shapes[0].label == "leaf")
+
+    # Clicking the class list moves the focus off the canvas.  Enter, Esc and
+    # Backspace used to go to that button and do nothing, so the outline
+    # could not be kept.
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit, QToolButton
+    shapes.activateWindow()
+    buttons = [b for b in shapes.palette.findChildren(QToolButton)
+               if b.isVisible() and b.focusPolicy() != Qt.FocusPolicy.NoFocus]
+
+    def focus_off_canvas():
+        if buttons:
+            buttons[0].setFocus(Qt.FocusReason.MouseFocusReason)
+        app.processEvents()
+        return QApplication.focusWidget()
+
+    shapes.canvas._add_ai_point(QPointF(160, 120), positive=True)
+    app.processEvents()
+    focus = focus_off_canvas()
+    if focus is None or focus is shapes.canvas:
+        ok("the class list can take the focus in this test", False)
+    else:
+        QTest.keyClick(focus, Qt.Key.Key_Backspace)
+        app.processEvents()
+        ok("Backspace takes back the click with the focus on the class list",
+           not shapes.canvas.has_ai_prompt())
+        shapes.canvas._add_ai_point(QPointF(160, 120), positive=True)
+        app.processEvents()
+        QTest.keyClick(focus_off_canvas(), Qt.Key.Key_Escape)
+        app.processEvents()
+        ok("Esc drops the outline with the focus on the class list",
+           shapes.canvas.ai_preview is None and not shapes.canvas.has_ai_prompt())
+        shapes.canvas._add_ai_point(QPointF(160, 120), positive=True)
+        app.processEvents()
+        QTest.keyClick(focus_off_canvas(), Qt.Key.Key_Return)
+        app.processEvents()
+        ok("Enter keeps the outline with the focus on the class list",
+           len(shapes.canvas.shapes) == 2)
+        search = shapes.palette.findChildren(QLineEdit)
+        if search:
+            shapes.canvas._add_ai_point(QPointF(160, 120), positive=True)
+            app.processEvents()
+            search[0].setFocus()
+            app.processEvents()
+            QTest.keyClick(search[0], Qt.Key.Key_Backspace)
+            app.processEvents()
+            ok("typing in the class search is still just typing",
+               shapes.canvas.has_ai_prompt())
+            shapes.canvas.clear_ai(quiet=True)
     shapes.tool_close()
 
     # ── the picture that reaches the model is the picture ──

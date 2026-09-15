@@ -47,6 +47,16 @@ class ToolSpec:
     highlights: tuple = field(default_factory=tuple)
     create: object = None                       # callable(host) -> QWidget
     recent: object = None                       # callable() -> [folder], or None
+    forget: object = None                       # callable(folder) drops it from recent
+
+
+def forget_in(settings, folder) -> None:
+    """Drop one folder from a settings store's recent list.  The folder itself
+    is never touched."""
+    target = os.path.normcase(os.path.abspath(str(folder)))
+    recent = [f for f in (settings.get("recent_folders") or [])
+              if os.path.normcase(os.path.abspath(str(f))) != target]
+    settings.set("recent_folders", recent)
 
 
 def _roi_create(host):
@@ -60,6 +70,11 @@ def _roi_recent():
     return [f for f in (Settings().get("recent_folders") or []) if os.path.isdir(f)]
 
 
+def _roi_forget(folder):
+    from ..apps.roi.config import Settings
+    forget_in(Settings(), folder)
+
+
 def _labelimg_create(host):
     from ..apps.labelimg.config import Settings
     from ..apps.labelimg.ui.window import LabelImgWindow
@@ -71,6 +86,11 @@ def _labelimg_recent():
     return [f for f in (Settings().get("recent_folders") or []) if os.path.isdir(f)]
 
 
+def _labelimg_forget(folder):
+    from ..apps.labelimg.config import Settings
+    forget_in(Settings(), folder)
+
+
 def _shapes_create(host):
     from ..apps.shapes.config import Settings
     from ..apps.shapes.ui.window import ShapesWindow
@@ -80,6 +100,11 @@ def _shapes_create(host):
 def _shapes_recent():
     from ..apps.shapes.config import Settings
     return [f for f in (Settings().get("recent_folders") or []) if os.path.isdir(f)]
+
+
+def _shapes_forget(folder):
+    from ..apps.shapes.config import Settings
+    forget_in(Settings(), folder)
 
 
 def _page(module, name):
@@ -99,21 +124,21 @@ def _tools():
                  "circles and freehand - and export spreadsheets and JSON for downstream code.",
                  "annotation", "polygon", ROI_VERSION,
                  ("xlsx + JSON per batch", "COCO / YOLO / VOC / masks"),
-                 _roi_create, _roi_recent),
+                 _roi_create, _roi_recent, _roi_forget),
         ToolSpec("labelimg", "LabelImg Master", "Bounding-box labelling and review",
                  "Label and review detection frames with a class manager, number-key class "
                  "hotkeys and one-key accept - Pascal VOC, YOLO or CreateML, exactly as LabelImg "
                  "always wrote them.",
                  "annotation", "rect", LABELIMG_VERSION,
                  ("Permanent class IDs", "VOC / YOLO / CreateML"),
-                 _labelimg_create, _labelimg_recent),
+                 _labelimg_create, _labelimg_recent, _labelimg_forget),
         ToolSpec("shapes", "LabelImg Shapes", "Polygons, oriented boxes, circles and more",
                  "Label objects with polygons, oriented boxes, circles, ellipses and freehand "
                  "outlines. Shapes stay editable, and export to YOLO segmentation, YOLO OBB "
                  "or COCO.",
                  "annotation", "shapes", SHAPES_VERSION,
                  ("Editable shapes", "YOLO seg / OBB / COCO"),
-                 _shapes_create, _shapes_recent),
+                 _shapes_create, _shapes_recent, _shapes_forget),
         ToolSpec("frames", "Video to Images", "Turn footage into frames",
                  "Save a frame every few seconds, every Nth frame or whenever the scene changes "
                  "- or scrub through and grab exactly the frames you want.",

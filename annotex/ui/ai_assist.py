@@ -163,6 +163,8 @@ class SamAssistant(QObject):
         self._order = []
         self._token = ""
         self._pending = ""
+        self._last = None                # (token, points, box, logits) of the last answer
+        self.last_refined = False        # whether the last answer built on the one before
         self._lock = threading.Lock()
         self._signals = _JobSignals(self)
         self._signals.done.connect(self._on_encoded)
@@ -216,7 +218,8 @@ class SamAssistant(QObject):
             return False, self.install_hint()
         if not self.configured():
             return False, ("No SAM model has been chosen yet.  Settings → AI "
-                           "points the tool at an encoder and a decoder .onnx file.")
+                           "downloads one in a click, or points the tool at your "
+                           "own encoder and decoder .onnx files.")
         return True, ""
 
     # ── model ─────────────────────────────────────────────
@@ -236,6 +239,7 @@ class SamAssistant(QObject):
             self._embeddings.clear()
             self._order = []
             self._pending = ""
+            self._last = None
         if runtime is not None:
             try:
                 runtime.unload()
@@ -343,13 +347,27 @@ class SamAssistant(QObject):
             from annotex.core.ai.sam import SamError
         except Exception as exc:                        # pragma: no cover
             return None, str(exc)
+        points = [tuple(point) for point in points]
+        refine = None
+        last = self._last
+        if last is not None and last[0] == self._token and last[2] == box \
+                and len(points) > len(last[1]) and points[:len(last[1])] == last[1]:
+            # One more click on the same prompt starts from the answer it is
+            # refining, as SAM's own interactive demo does - otherwise a
+            # second click can throw away what the first one found.
+            refine = last[3]
         try:
             mask, size, _score = runtime.predict(embedding, points=points, box=box,
-                                                 max_side=PREDICT_MAX_SIDE)
+                                                 max_side=PREDICT_MAX_SIDE, refine=refine)
         except SamError as exc:
+            self._last = None
             return None, str(exc)
         except Exception as exc:
+            self._last = None
             return None, "the model could not answer that prompt: %s" % exc
+        logits = getattr(runtime, "last_low_res", None)
+        self._last = (self._token, points, box, logits) if logits is not None else None
+        self.last_refined = refine is not None
         return (mask, size, embedding.orig_size), ""
 
     # ── shapes out of a mask ──────────────────────────────

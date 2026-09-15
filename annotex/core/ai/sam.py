@@ -190,9 +190,18 @@ def discover_models(extra_dirs=()):
     pairs = []
     for (_folder, family), slot in sorted(found.items()):
         if "encoder" in slot and "decoder" in slot:
-            pairs.append(ModelPair(family.replace(" ", " ").strip().title() or "SAM",
-                                   slot["encoder"], slot["decoder"]))
+            name = _catalog_name(slot["encoder"]) or family.strip().title() or "SAM"
+            pairs.append(ModelPair(name, slot["encoder"], slot["decoder"]))
     return pairs
+
+
+def _catalog_name(path) -> str:
+    """"SAM ViT-B" for a downloaded model, not its file name title-cased."""
+    try:
+        from .catalog import name_for
+        return name_for(path)
+    except Exception:                                   # pragma: no cover
+        return ""
 
 
 # ══════════════════════════════════════════════════════════════
@@ -231,6 +240,7 @@ class SamRuntime:
         self._plan = {}
         self._decoder_inputs = {}
         self.long_side = DEFAULT_LONG_SIDE
+        self.last_low_res = None             # the last answer's 256x256 logits
 
     # ── loading ───────────────────────────────────────────
     @property
@@ -288,6 +298,7 @@ class SamRuntime:
     def unload(self) -> None:
         self._encoder = self._decoder = None
         self._plan, self._decoder_inputs = {}, {}
+        self.last_low_res = None
 
     # ── what this export expects ──────────────────────────
     def _encoder_plan(self) -> dict:
@@ -393,14 +404,20 @@ class SamRuntime:
         return Embedding(outputs[0], (orig_h, orig_w), (height, width), scale, token)
 
     # ── predicting ────────────────────────────────────────
-    def predict(self, embedding: Embedding, points=(), box=None, max_side: int = 1024):
+    def predict(self, embedding: Embedding, points=(), box=None, max_side: int = 1024,
+                refine=None):
         """One prediction.
 
         `points` is [(x, y, positive_bool), …] and `box` is (x0, y0, x1, y1),
         both in ORIGINAL image pixels.  Returns (mask, (height, width), score)
         where `mask` is a boolean array in the returned size - which may be
         smaller than the image, so a huge photo does not cost a hundred
-        megabytes per click.  Scale the result back with the size given."""
+        megabytes per click.  Scale the result back with the size given.
+
+        `refine` is an earlier answer's `last_low_res`: the decoder starts
+        from that mask instead of from nothing, which is how SAM keeps a
+        second click from undoing what the first one found.  Afterwards
+        `last_low_res` holds this answer's logits, or None."""
         if not self.loaded:
             self.load()
         if embedding is None:
@@ -443,10 +460,20 @@ class SamRuntime:
         has_mask = self._input("has_mask_input")
         if mask_input == has_mask:
             mask_input = ""               # only one of them is really there
+        previous = None
+        if mask_input and has_mask and refine is not None:
+            try:
+                candidate = np.asarray(refine, dtype=np.float32)
+                if candidate.size == LOW_RES * LOW_RES:
+                    previous = candidate.reshape(1, 1, LOW_RES, LOW_RES)
+            except Exception:
+                previous = None
+        self.last_low_res = None
         if mask_input:
-            feed[mask_input] = np.zeros((1, 1, LOW_RES, LOW_RES), dtype=np.float32)
+            feed[mask_input] = previous if previous is not None else \
+                np.zeros((1, 1, LOW_RES, LOW_RES), dtype=np.float32)
         if has_mask:
-            feed[has_mask] = np.zeros(1, dtype=np.float32)
+            feed[has_mask] = np.array([1.0 if previous is not None else 0.0], dtype=np.float32)
         size_input = self._input("orig_im_size", "orig_size")
         if size_input:
             feed[size_input] = np.array([out_h, out_w], dtype=np.float32)
@@ -474,12 +501,26 @@ class SamRuntime:
             score = float(np.asarray(scores).reshape(-1)[best]) if scores is not None else 0.0
         except Exception as exc:
             raise SamError("the mask could not be read: %s" % exc)
+        self.last_low_res = self._low_res(outputs, best)
 
         if not size_input:
             # No resize inside the graph: the mask covers the padded square,
             # so crop away the padding before handing it back.
             mask, out_h, out_w = self._crop_padding(mask, embedding)
         return mask, (int(mask.shape[0]), int(mask.shape[1])), score
+
+    def _low_res(self, outputs, best):
+        """The 256x256 logits behind the chosen mask, for `refine` next time."""
+        try:
+            names = [output.name for output in self._decoder.get_outputs()]
+            for name, value in zip(names, outputs):
+                shape = tuple(getattr(value, "shape", ()))
+                if "low_res" in name and len(shape) == 4 and shape[-2:] == (LOW_RES, LOW_RES):
+                    index = best if shape[1] > best else 0
+                    return value[:1, index:index + 1].astype("float32")
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _crop_padding(mask, embedding):

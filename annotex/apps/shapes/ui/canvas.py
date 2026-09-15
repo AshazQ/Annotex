@@ -994,29 +994,51 @@ class ShapeCanvas(ImageViewport):
             self._space_pan = True
             self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
             return
+        if self.handle_pending_key(event):
+            return
+        if key == Qt.Key.Key_Escape and self.selection:
+            self.clear_selection()
+            return
+        super().keyPressEvent(event)
+
+    def handle_pending_key(self, event) -> bool:
+        """Enter, Esc, Backspace and Ctrl+Z for the shape or AI proposal in
+        progress; True when the key was used.
+
+        The window sends these here too when a click on the class list or the
+        filmstrip has taken the focus, so none of it may depend on focus."""
+        key = event.key()
+        mods = event.modifiers()
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self.tool == T_AI and self.ai_preview:
                 self.aiAccepted.emit()
-                return
+                return True
             if self._draft:
                 self.finish_draft()
-                return
+                return True
+            return False
         if key == Qt.Key.Key_Escape:
             if self.tool == T_AI and (self.has_ai_prompt() or self.ai_preview):
                 self.clear_ai()
                 self.statusMessage.emit("AI prompt cleared", "info")
-                return
-            if self.cancel_draft():
-                return
-            if self.selection:
-                self.clear_selection()
-                return
-        if key == Qt.Key.Key_Backspace:
+                return True
+            return self.cancel_draft()
+        undo_key = key == Qt.Key.Key_Z and bool(mods & Qt.KeyboardModifier.ControlModifier) \
+            and not mods & Qt.KeyboardModifier.ShiftModifier
+        if key == Qt.Key.Key_Backspace or undo_key:
+            # The window's Undo is switched off until there is history to undo,
+            # so Ctrl+Z on the very first shape lands here instead.
             if self.tool == T_AI and self.undo_ai_point():
-                return
+                if undo_key:
+                    self.statusMessage.emit("Last AI click undone", "info")
+                return True
             if self.undo_draft_point():
-                return
-        super().keyPressEvent(event)
+                if undo_key:
+                    left = len(self._draft)
+                    self.statusMessage.emit("Last point removed  ·  %d left" % left if left
+                                            else "Last point removed - the shape is empty", "info")
+                return True
+        return False
 
     def keyReleaseEvent(self, event):
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat() and self._space_pan:

@@ -173,6 +173,7 @@ class FeatureCard(_Lift, QFrame):
 
     openRequested = Signal(str)
     folderRequested = Signal(str, str)           # tool id, folder ("" = ask)
+    forgetRequested = Signal(str, str)           # tool id, folder to drop from recent
 
     def __init__(self, spec, shortcut, parent=None):
         super().__init__(parent)
@@ -258,12 +259,24 @@ class FeatureCard(_Lift, QFrame):
             return
         metrics = QFontMetrics(self.font())
         for folder in folders[:3]:
-            link = QPushButton(metrics.elidedText(folder, Qt.TextElideMode.ElideMiddle, 380))
+            line = QWidget()
+            line_layout = QHBoxLayout(line)
+            line_layout.setContentsMargins(0, 0, 0, 0)
+            line_layout.setSpacing(4)
+            link = QPushButton(metrics.elidedText(folder, Qt.TextElideMode.ElideMiddle, 350))
             link.setObjectName("Link")
             link.setToolTip(folder)
             link.setCursor(Qt.CursorShape.PointingHandCursor)
             link.clicked.connect(lambda _c=False, f=folder: self.folderRequested.emit(self.spec.id, f))
-            self.recent_box.addWidget(link)
+            line_layout.addWidget(link, 1, Qt.AlignmentFlag.AlignLeft)
+            remove = QPushButton("✕")
+            remove.setObjectName("Link")
+            remove.setFixedWidth(26)
+            remove.setCursor(Qt.CursorShape.PointingHandCursor)
+            remove.setToolTip("Remove from recent folders - the folder itself is not touched")
+            remove.clicked.connect(lambda _c=False, f=folder: self.forgetRequested.emit(self.spec.id, f))
+            line_layout.addWidget(remove)
+            self.recent_box.addWidget(line)
 
 
 # Old name kept for anything that imported it.
@@ -339,6 +352,7 @@ class ContinueCard(_Lift, QFrame):
     """One recent folder: thumbnail, tool, progress and a Resume button."""
 
     resumeRequested = Signal(str, str)
+    forgetRequested = Signal(str, str)
 
     def __init__(self, session, spec, parent=None):
         super().__init__(parent)
@@ -364,6 +378,14 @@ class ContinueCard(_Lift, QFrame):
         chip_row = QHBoxLayout()
         chip_row.addWidget(self.chip)
         chip_row.addStretch(1)
+        # Up here, beside the tool chip, so it never squeezes the progress line.
+        self.remove = QPushButton("✕")
+        self.remove.setObjectName("Link")
+        self.remove.setFixedWidth(26)
+        self.remove.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.remove.setToolTip("Remove from recent folders - the folder itself is not touched")
+        self.remove.clicked.connect(lambda: self.forgetRequested.emit(session.tool_id, session.folder))
+        chip_row.addWidget(self.remove)
         texts.addLayout(chip_row)
         title = QLabel(session.name)
         title.setObjectName("TileTitle")
@@ -442,6 +464,7 @@ class ContinueCard(_Lift, QFrame):
 class HomePage(QWidget):
     openRequested = Signal(str)
     folderRequested = Signal(str, str)
+    forgetRequested = Signal(str, str)
     themeToggleRequested = Signal()
     _measured = Signal(object)
 
@@ -524,6 +547,8 @@ class HomePage(QWidget):
                 card = card_class(spec, "Ctrl+%d" % number if number <= 9 else "")
                 card.openRequested.connect(self.openRequested.emit)
                 card.folderRequested.connect(self.folderRequested.emit)
+                if hasattr(card, "forgetRequested"):
+                    card.forgetRequested.connect(self.forgetRequested.emit)
                 cards.append(card)
                 self.cards.append(card)
             self.sections.append((label, grid, cards))
@@ -584,6 +609,7 @@ class HomePage(QWidget):
         for session in sessions:
             card = ContinueCard(session, specs[session.tool_id])
             card.resumeRequested.connect(self.folderRequested.emit)
+            card.forgetRequested.connect(self.forgetRequested.emit)
             if self._theme is not None:
                 card.set_theme(self._theme)
             self.continue_cards.append(card)

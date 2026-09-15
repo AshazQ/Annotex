@@ -58,7 +58,9 @@ between them.
 **Home** greets you, offers to **continue where you left off** (the last
 folders you worked in, with a thumbnail, how many images are annotated and a
 Resume button), and shows the annotation tools as large cards and the video
-and image tools as compact tiles.
+and image tools as compact tiles. The **✕** on a Continue card, or beside a
+folder under a tool card's recent folders, takes that folder off the list; the
+folder itself is never touched.
 
 **Every tool has its own colour** - ROI Studio orange, LabelImg Master blue,
 LabelImg Shapes violet, Video to Images cyan, Trimmer red, Converter yellow,
@@ -258,7 +260,7 @@ untouched, and the two keep separate class lists.
 | **Ctrl+S** | save (an image saved with no shapes counts as background) |
 | **Ctrl+C** / **Ctrl+X** / **Ctrl+V** | copy / cut / paste the selected shapes - onto any other image |
 | **Ctrl+Shift+V** | add every shape from the previous image |
-| **Ctrl+Z** / **Ctrl+Y** | undo / redo |
+| **Ctrl+Z** / **Ctrl+Y** | undo / redo - while a polygon is being drawn, Ctrl+Z (or Backspace) takes back just the last point |
 | **Ctrl+E** / **Ctrl+D** / **Del** | change class / duplicate / delete |
 | **Ctrl+M** / **Ctrl+Shift+E** | Class Manager / export |
 
@@ -297,22 +299,42 @@ LabelImg Master, a polygon in LabelImg Shapes.
 | right-click, or Shift+click | exclude this - trim the proposal back |
 | drag | a rough box to look inside |
 | **Enter** (or double-click) | keep the proposal, with the active class |
-| **Backspace** | take back the last click |
+| **Backspace** or **Ctrl+Z** | take back the last click |
 | **Esc** | drop the proposal and start again |
+
+Each extra click starts from the proposal already on screen, so it refines
+that proposal instead of starting over. Enter, Esc, Backspace and Ctrl+Z work
+even after a click on the class list or the filmstrip has moved the focus.
 
 Nothing is added to the image until you accept it, and what is added is an
 ordinary box or polygon: drag it, resize it, relabel it, undo it like any
 other.
 
-**Setting it up.** The model is two ONNX files - an *encoder* and a *decoder* -
-that live on your machine; no image ever leaves it and nothing is downloaded
-on its own. Once:
+**Setting it up.** Once:
 
 ```
 python bootstrap.py --ai          # installs onnxruntime and numpy
 ```
 
-then put the two files in the model folder and pick them in
+then press **S**, say yes to *Download or choose a model now?*, pick a model
+and press **Download** - the LabelMe way. The dialog fetches the two ONNX
+files, checks them, switches the AI tool on and closes. The choices are the
+quantized Segment Anything models LabelMe itself uses, from LabelMe's GitHub
+releases:
+
+| Model | Download | |
+|---|---|---|
+| SAM ViT-B | 104 MB | fastest - the one to start with |
+| SAM ViT-L | 316 MB | more accurate, slower |
+| SAM ViT-H | 634 MB | most accurate, slowest |
+
+A download that stops - Stop, closing the dialog, a dropped connection -
+resumes from where it was the next time, and a file that arrives cut short or
+damaged is refused rather than used. Downloading is the only time Annotex
+touches the network for this; no image ever leaves your machine.
+
+**Your own model.** The model is two ONNX files - an *encoder* and a
+*decoder*. Put them in the model folder and pick them in
 **Settings → AI** (or **Window → AI model**). The folder is shown in that
 dialog - `%APPDATA%\Annotex\models` on Windows,
 `~/Library/Application Support/Annotex/models` on macOS,

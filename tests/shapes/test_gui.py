@@ -110,6 +110,31 @@ try:
     ok("folder is locked", os.path.isfile(os.path.join(folder, LOCK_NAME)))
     ok("separate class store starts empty", len(w.project()) == 0)
 
+    # ── Ctrl+Z takes back one polygon point, not the shape ──
+    from PySide6.QtGui import QKeyEvent
+    w.set_tool(T_POLYGON)
+    for x, y in ((600, 400), (700, 410), (690, 500)):
+        mouse(QEvent.Type.MouseButtonPress, x, y)
+        mouse(QEvent.Type.MouseButtonRelease, x, y)
+    ok("three polygon points placed", len(canvas._draft) == 3)
+    ok("Undo is still off on a fresh image", not w.act("undo").isEnabled())
+    canvas.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Z,
+                                   Qt.KeyboardModifier.ControlModifier))
+    ok("Ctrl+Z removes the last point even before there is history",
+       len(canvas._draft) == 2 and abs(canvas._draft[-1].x() - 700) < 1.0)
+    w.undo()
+    ok("Undo from the menu or toolbar removes one point too",
+       len(canvas._draft) == 1 and not canvas.shapes)
+    w.undo()
+    ok("and the last one, leaving an empty shape", not canvas._draft and not canvas.shapes)
+    for x, y in ((600, 400), (700, 410)):
+        mouse(QEvent.Type.MouseButtonPress, x, y)
+        mouse(QEvent.Type.MouseButtonRelease, x, y)
+    canvas.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Z,
+                                   Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
+    ok("Ctrl+Shift+Z is not taken for undoing a point", len(canvas._draft) == 2)
+    canvas.cancel_draft(quiet=True)
+
     # ── polygon, with the class dialog ────────────────────
     w.set_tool(T_POLYGON)
     answers.append("cookies")

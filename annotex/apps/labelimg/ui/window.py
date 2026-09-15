@@ -1781,7 +1781,7 @@ class LabelImgWindow(QMainWindow):
                 self._ai_offered = True
                 answer = QMessageBox.question(
                     self, "AI select",
-                    "%s\n\nChoose a model now?" % why,
+                    "%s\n\nDownload or choose a model now?" % why,
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes)
                 if answer == QMessageBox.StandardButton.Yes:
