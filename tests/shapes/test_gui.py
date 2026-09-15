@@ -33,6 +33,7 @@ from annotex.apps.shapes.config import (EXPORT_COCO, EXPORT_YOLO_OBB,  # noqa: E
                                         KIND_FREEHAND, KIND_OBB, KIND_POLYGON,
                                         LOCK_NAME, Settings, TASK_COCO, TASK_OBB,
                                         TASK_SEGMENT)
+from annotex.apps.shapes.core.model import Shape                     # noqa: E402
 from annotex.apps.shapes.core.store import annotation_path, read_annotation  # noqa: E402
 from annotex.apps.shapes.ui import window as window_module          # noqa: E402
 from annotex.apps.shapes.ui.canvas import (T_CIRCLE, T_ELLIPSE, T_FREEHAND,  # noqa: E402
@@ -237,6 +238,19 @@ try:
     ok("reopening restores the shapes", [s.to_dict() for s in canvas.shapes] == drawn)
     ok("nothing to save after reopening", not w.is_dirty())
     ok("history starts fresh", w.history.depth() == (0, 0))
+
+    # duplication stops at the per-image limit rather than doubling for ever
+    from annotex.apps.shapes.config import MAX_SHAPES_PER_IMAGE
+    keep = canvas.snapshot()
+    filler = Shape.polygon("cola", [(5, 5), (30, 6), (20, 25)])
+    canvas.set_shapes([filler.copy() for _ in range(MAX_SHAPES_PER_IMAGE - 2)])
+    canvas.select_all()
+    added = canvas.duplicate_selected()
+    ok("duplicate stops at the per-image limit",
+       added == 2 and len(canvas.shapes) == MAX_SHAPES_PER_IMAGE)
+    ok("and refuses once the image is full", canvas.duplicate_selected() == 0)
+    canvas.set_shapes(keep)
+    settle()
 
     # ── copying chosen shapes onto another image ──────────
     from annotex.core import clipboard

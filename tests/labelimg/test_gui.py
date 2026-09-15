@@ -197,7 +197,22 @@ try:
     c.select_index(1)
     w.toggle_hidden()
     ok("hide", not c.boxes[1].visible)
-    c.set_visible([1], True)
+    rows = lambda: [w.box_panel.list.item(i).text()
+                    for i in range(w.box_panel.list.count())]
+    ok("the box list says which box is hidden", any("hidden" in r for r in rows()))
+    c.selection = {1}
+    w.toggle_hidden()
+    ok("and hide brings it back", c.boxes[1].visible
+       and not any("hidden" in r for r in rows()))
+    c.select_index(0)
+    w.toggle_lock()
+    ok("the box list says which box is locked", any("locked" in r for r in rows()))
+    c.set_locked([0], False)
+    w._refresh_side()
+
+    c.select_index(2)
+    ok("picking a box shows in the list without rebuilding it",
+       w.box_panel.selected_indices() == [2])
     c.select_index(0)
     w.toggle_difficult()
     ok("difficult flag", c.boxes[0].difficult)
@@ -207,6 +222,17 @@ try:
     ok("duplicate", len(c.boxes) == count + 1)
     w.delete_boxes()
     ok("delete", len(c.boxes) == count)
+
+    # duplication stops at the per-image limit rather than doubling for ever
+    from annotex.apps.labelimg.config import MAX_BOXES_PER_IMAGE
+    keep = c.snapshot()
+    c.set_boxes([Box("person", 1, 1, 20, 20)] * (MAX_BOXES_PER_IMAGE - 3))
+    c.select_all()
+    added = c.duplicate_selected()
+    ok("duplicate stops at the per-image limit",
+       added == 3 and len(c.boxes) == MAX_BOXES_PER_IMAGE)
+    ok("and refuses once the image is full", c.duplicate_selected() == 0)
+    c.set_boxes(keep)
 
     shot(w, "labelimg_editor.png")
 

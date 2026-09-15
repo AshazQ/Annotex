@@ -378,6 +378,34 @@ class BoxListPanel(QWidget):
         return sorted(item.data(Qt.ItemDataRole.UserRole)
                       for item in self.list.selectedItems())
 
+    def set_selection(self, indices) -> None:
+        """Show this selection without rebuilding the list.
+
+        Picking a box must not cost a rebuild of every row: on a crowded
+        image that is the difference between instant and a visible pause."""
+        wanted = set(indices or ())
+        self._updating = True
+        blocked = self.list.blockSignals(True)
+        self.list.setUpdatesEnabled(False)
+        try:
+            for row in range(self.list.count()):
+                item = self.list.item(row)
+                if item is None:
+                    continue
+                index = item.data(Qt.ItemDataRole.UserRole)
+                item.setSelected((row if index is None else index) in wanted)
+            if wanted:
+                for row in range(self.list.count()):
+                    item = self.list.item(row)
+                    if item is not None and item.isSelected():
+                        self.list.scrollToItem(item)
+                        break
+        finally:
+            self.list.setUpdatesEnabled(True)
+            self.list.blockSignals(blocked)
+            self._updating = False
+        self._sync(wanted)
+
     def _sync(self, selection) -> None:
         for button in self.buttons.values():
             button.setEnabled(bool(selection))

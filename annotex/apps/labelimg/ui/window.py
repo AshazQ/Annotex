@@ -548,8 +548,12 @@ class LabelImgWindow(QMainWindow):
 
         panel = self.box_panel
         panel.selectionRequested.connect(self._select_from_panel)
-        panel.visibilityToggled.connect(lambda idx, v: canvas.set_visible(idx, v))
-        panel.lockToggled.connect(lambda idx, v: canvas.set_locked(idx, v))
+        # Hiding and locking are editing state, not annotation, so they do
+        # not go through boxesChanged - the list is refreshed by hand instead.
+        panel.visibilityToggled.connect(lambda idx, v: (canvas.set_visible(idx, v),
+                                                        self._refresh_side()))
+        panel.lockToggled.connect(lambda idx, v: (canvas.set_locked(idx, v),
+                                                  self._refresh_side()))
         panel.difficultToggled.connect(lambda idx, v: canvas.set_difficult(idx, v))
         panel.editRequested.connect(self.edit_label)
         panel.duplicateRequested.connect(lambda: canvas.duplicate_selected())
@@ -1433,7 +1437,13 @@ class LabelImgWindow(QMainWindow):
         self._sync_actions()
 
     def _on_selection_changed(self) -> None:
-        self._refresh_side()
+        # Only the selection changed, so only the selection is updated: a
+        # full rebuild of the box list on every click is what makes a
+        # crowded image feel slow.
+        if hasattr(self, "box_panel"):
+            self.box_panel.set_selection(self.canvas.selected_indices())
+        self._refresh_state_chip()
+        self._refresh_minimap()
         self._sync_actions()
 
     def _select_from_panel(self, indices) -> None:
@@ -1554,7 +1564,9 @@ class LabelImgWindow(QMainWindow):
         if not boxes:
             self._status("Select a box first", "warning")
             return
-        self.canvas.set_locked(self.canvas.selected_indices(), not all(b.locked for b in boxes))
+        self.canvas.set_locked(self.canvas.selected_indices(),
+                               not all(b.locked for b in boxes))
+        self._refresh_side()
 
     def toggle_hidden(self) -> None:
         indices = self.canvas.selected_indices()
@@ -1564,6 +1576,7 @@ class LabelImgWindow(QMainWindow):
         # Anything hidden in the selection comes back; otherwise hide it all.
         show = any(not self.canvas.boxes[i].visible for i in indices)
         self.canvas.set_visible(indices, show)
+        self._refresh_side()
         if show:
             self._status("%d box(es) shown again" % len(indices), "good")
         else:
