@@ -244,12 +244,37 @@ def drive_read_only():
     if really_locked:
         os.chmod(locked, 0o500)
     try:
-        from annotex.core.io_safe import folder_is_writable
+        from annotex.core.io_safe import folder_is_writable, write_text_atomic
         if really_locked:
             writable, _why = folder_is_writable(locked)
             ok("an unwritable folder is recognised", not writable)
         ok("a folder that is not there is not writable",
            not folder_is_writable(os.path.join(SANDBOX, "no such folder"))[0])
+
+        # Saving must not change who can read the file.  Every write goes
+        # through a temp file, which is made readable by its owner alone, and
+        # os.replace carries that onto the file it replaces - so a shared
+        # folder would quietly become one person's after the first save.
+        if os.name != "nt":
+            import stat as _stat
+            shared = os.path.join(SANDBOX, "shared.json")
+            with open(shared, "w", encoding="utf-8") as handle:
+                handle.write('{"a": 1}')
+            os.chmod(shared, 0o644)
+            write_text_atomic(shared, '{"a": 2}', verify_json=True, keep_backup=False)
+            ok("saving keeps the permissions a file already had",
+               _stat.S_IMODE(os.stat(shared).st_mode) == 0o644)
+            os.chmod(shared, 0o600)
+            write_text_atomic(shared, '{"a": 3}', verify_json=True, keep_backup=False)
+            ok("and does not widen one that was locked down",
+               _stat.S_IMODE(os.stat(shared).st_mode) == 0o600)
+            fresh = os.path.join(SANDBOX, "fresh.json")
+            write_text_atomic(fresh, '{"b": 1}', verify_json=True, keep_backup=False)
+            probe = os.path.join(SANDBOX, "probe.json")
+            with open(probe, "w", encoding="utf-8") as handle:
+                handle.write("{}")
+            ok("a new file is made the way any other program would make it",
+               _stat.S_IMODE(os.stat(fresh).st_mode) == _stat.S_IMODE(os.stat(probe).st_mode))
 
         window = box_window.LabelImgWindow(
             BoxSettings(os.path.join(SANDBOX, "labelimg_ro.json")), app, class_store=store)

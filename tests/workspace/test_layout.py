@@ -204,6 +204,26 @@ def main():
     ok("a checked icon takes its active colour", any(on.pixelColor(x, y).red() > 200 and on.pixelColor(x, y).alpha() > 0
                                                      for x in range(on.width()) for y in range(on.height())))
 
+    # ── every tool, not just the three that draw on an image ──
+    # A tool is opened in the same window as all the others, so the tallest
+    # one sets the floor for the whole shell: one tool that cannot shrink puts
+    # the buttons along the bottom off the screen for every tool.  The target
+    # is a laptop running Windows at 150 % scaling - 1093 x 614 usable.
+    from annotex.shell import registry
+    SCREEN_W, SCREEN_H = 1093, 614
+    for spec in registry.TOOLS:
+        shell.open_tool(spec.id)
+        for _ in range(5):
+            app.processEvents()
+        page = shell.pages.get(spec.id)
+        if page is None:
+            continue
+        hint = page.minimumSizeHint()
+        wide = max(hint.width(), page.minimumWidth())
+        high = max(hint.height(), page.minimumHeight())
+        ok("%s fits a 1093x614 screen (needs %dx%d)" % (spec.name, wide, high),
+           wide <= SCREEN_W and high <= SCREEN_H)
+
     shell.close()
     print("=" * 60)
     if FAILS:

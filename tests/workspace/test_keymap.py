@@ -204,6 +204,59 @@ def main():
         else:
             tool.close()
 
+    # ── the shell must not eat a key the tool on show binds ──
+    # The shell's own keys are application shortcuts, which outrank a tool's
+    # window shortcuts: Ctrl+1 jumped to a tool instead of zooming, and Ctrl+W
+    # closed the whole tool instead of the batch, with nothing logged.  Press
+    # the keys for real and see which action answers.
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QAction, QColor, QImage
+    from PySide6.QtTest import QTest
+    from annotex.config import ShellSettings
+    from annotex.shell.window import ShellWindow
+
+    pictures = os.path.join(SANDBOX, "keys_batch")
+    os.makedirs(pictures, exist_ok=True)
+    for index in range(2):
+        picture = QImage(400, 300, QImage.Format.Format_RGB32)
+        picture.fill(QColor(60, 90, 120))
+        picture.save(os.path.join(pictures, "shot_%d.png" % index))
+
+    shell = ShellWindow(app, ShellSettings(os.path.join(SANDBOX, "keys_shell.json")))
+    shell.show()
+    app.processEvents()
+    for tool_id in ("roi", "labelimg"):
+        page = shell.open_tool(tool_id, pictures)
+        for _ in range(10):
+            app.processEvents()
+        answered = []
+        for action in page.findChildren(QAction):
+            for sequence in action.shortcuts():
+                if sequence.toString() in ("Ctrl+1", "Ctrl+W"):
+                    action.triggered.connect(
+                        lambda *_a, name=action.text(): answered.append(name))
+        for key, name, wanted in ((Qt.Key.Key_1, "Ctrl+1", "Zoom to 100%"),
+                                  (Qt.Key.Key_W, "Ctrl+W", "Close batch")):
+            answered.clear()
+            QTest.keyClick(page, key, Qt.KeyboardModifier.ControlModifier)
+            app.processEvents()
+            ok("%s: %s reaches the tool, not the shell" % (tool_id, name),
+               answered == [wanted])
+            if name == "Ctrl+W":
+                page = shell.open_tool(tool_id, pictures)
+                for _ in range(10):
+                    app.processEvents()
+
+    # and the shell takes its keys back where no tool claims them
+    shell.open_tool("frames")
+    for _ in range(5):
+        app.processEvents()
+    shell_keys = {a.shortcut().toString(): a for a in shell.findChildren(
+        QAction, options=Qt.FindChildOption.FindDirectChildrenOnly)}
+    ok("a media tool leaves Ctrl+1 and Ctrl+W to the shell",
+       all(shell_keys[key].isEnabled() for key in ("Ctrl+1", "Ctrl+W") if key in shell_keys))
+    shell.close()
+
     print("=" * 60)
     if FAILS:
         print("KEYMAP TESTS FAILED: %s" % ", ".join(FAILS))
