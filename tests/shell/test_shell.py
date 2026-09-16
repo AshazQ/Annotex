@@ -119,6 +119,47 @@ try:
                                            for key in palette.DARK))
     ok("every theme keeps text readable", all(palette.contrast(t["text"], t["surface"]) >= 4.5
                                               for t in palette.THEMES.values()))
+    # Body text on a card was the only pairing anyone checked, so the ones
+    # that actually went wrong went unseen: a warning line at 2.31:1 on
+    # Catppuccin Latte's cream, and a Delete button whose white label sat at
+    # 3.14:1 on Dracula's red while black would have given 6.01:1.  Every
+    # foreground the stylesheet draws on a known background is measured here.
+    # (Solarized Light's body text is 4.39 - a hair under, and faithful to
+    # the palette it is named after, so the bar allows it.)
+    PAIRINGS = (("text", "surface"), ("text", "appBg"), ("text", "surfaceAlt"),
+                ("title", "surface"), ("subText", "surface"), ("subTextOnApp", "appBg"),
+                ("onAccent", "accent"), ("onDanger", "danger"),
+                ("tooltipFg", "tooltipBg"), ("goodText", "surface"),
+                ("warnText", "surface"), ("dangerText", "surface"),
+                ("accentText", "surface"))
+    def shade(resolved, key):
+        """The text shade, or the plain colour where there is no such shade."""
+        if key in resolved:
+            return resolved[key]
+        return resolved[key.replace("TextOnApp", "").replace("Text", "")]
+
+    dim = []
+    for theme_id in sorted(palette.THEMES):
+        resolved = palette.resolve_theme(theme_id, app)
+        for fg, bg in PAIRINGS:
+            ratio = palette.contrast(shade(resolved, fg), resolved[bg])
+            if ratio < 4.35:
+                dim.append("%s %s on %s %.2f" % (theme_id, fg, bg, ratio))
+    ok("every theme keeps every kind of text readable%s"
+       % ("" if not dim else " (%s)" % "; ".join(dim[:4])), not dim)
+    # The two colours that are only ever black or white must be the clearer
+    # of the two, not the brighter-looking one.
+    wrong = []
+    for theme_id in sorted(palette.THEMES):
+        resolved = palette.resolve_theme(theme_id, app)
+        for key, base in (("onAccent", "accent"), ("onDanger", "danger")):
+            chosen = palette.contrast(resolved[key], resolved[base])
+            best = max(palette.contrast("#111111", resolved[base]),
+                       palette.contrast("#ffffff", resolved[base]))
+            if chosen < best - 0.01:
+                wrong.append("%s %s" % (theme_id, key))
+    ok("a button label takes the clearer of black and white%s"
+       % ("" if not wrong else " (%s)" % ", ".join(wrong[:4])), not wrong)
     ok("each tool has its own colour", page.theme["accent"] != roi.theme["accent"])
     shell.request_theme("dracula")
     app.processEvents()

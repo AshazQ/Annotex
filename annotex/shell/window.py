@@ -559,15 +559,35 @@ class ShellWindow(QMainWindow):
 
     def restart(self) -> bool:
         """Close as quitting does - every tool saves, jobs are confirmed - then
-        start Annotex again.  False when the close was cancelled."""
+        start Annotex again.  False when the restart did not happen."""
         from .display import restart_command
+        program, arguments, folder = restart_command()
+        # Look before leaping.  Closing first and only then discovering that
+        # nothing can be started took Annotex off the screen with nothing
+        # coming back - it simply vanished, and the person who had asked for a
+        # new interface size was left thinking it had crashed.  Nothing is
+        # closed until there is something to come back to; the size is safely
+        # saved either way.
+        if not os.path.isfile(program):
+            messages.warn(self, "Display",
+                          "Annotex cannot find the program it would start itself with:\n\n%s\n\n"
+                          "The new interface size is saved, and will be used the next time you "
+                          "start Annotex yourself." % program)
+            return False
         if not self.close():
             return False
-        program, arguments, folder = restart_command()
+        started = False
         try:
-            QProcess.startDetached(program, arguments, folder)
+            started = bool(QProcess.startDetached(program, arguments, folder))
         except Exception:
-            pass
+            started = False
+        if not started:
+            self.show()
+            messages.warn(self, "Display",
+                          "Annotex could not start itself again, so it has stayed open.\n\n"
+                          "The new interface size is saved. Close Annotex and start it again "
+                          "when you are ready.")
+            return False
         self.app.quit()
         return True
 

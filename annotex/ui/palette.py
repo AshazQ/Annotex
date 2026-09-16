@@ -55,11 +55,13 @@ def qcolor(value, alpha: int | None = None) -> QColor:
 
 
 def readable_on(value) -> str:
-    """Black or white, whichever reads better on this background."""
-    colour = qcolor(value)
-    luminance = (0.299 * colour.red() + 0.587 * colour.green()
-                 + 0.114 * colour.blue())
-    return "#111111" if luminance > 150 else "#ffffff"
+    """Black or white, whichever reads better on this background.
+
+    Measured, not guessed.  Choosing by perceived brightness alone picked the
+    harder of the two on 17 of the suite's 40 button labels - white on
+    Dracula's red came out at 3.14:1 where black gives 6.01:1."""
+    dark, light = "#111111", "#ffffff"
+    return dark if contrast(dark, value) >= contrast(light, value) else light
 
 
 def mix(a, b, amount: float) -> str:
@@ -86,6 +88,35 @@ def contrast(a, b) -> float:
     return (la + 0.05) / (lb + 0.05)
 
 
+# Normal text needs this much contrast with what is behind it to stay
+# comfortable to read (the WCAG AA bar for body text).
+TEXT_CONTRAST = 4.5
+
+
+def readable_text(colour, background, target: float = TEXT_CONTRAST) -> str:
+    """`colour` moved towards black or white until it reads on `background`.
+
+    The hue is kept, so a theme's own green still looks like its green - only
+    the shade changes, and only where the colour is used as text.  Chips,
+    dots, bars and borders go on using the colour as it was given.  Returns
+    the colour unchanged when it already clears the bar, or the nearest it
+    can get when even black or white would not."""
+    if contrast(colour, background) >= target:
+        return qcolor(colour).name()
+    # Darken on a light background, lighten on a dark one - whichever end has
+    # the room.  Small steps, so the least change that works is what is used.
+    towards = "#000000" if luminance(background) > 0.5 else "#ffffff"
+    best, best_ratio = qcolor(colour).name(), contrast(colour, background)
+    for step in range(1, 21):
+        candidate = mix(towards, colour, step / 20.0)
+        ratio = contrast(candidate, background)
+        if ratio > best_ratio:
+            best, best_ratio = candidate, ratio
+        if ratio >= target:
+            return candidate
+    return best
+
+
 # ══════════════════════════════════════════════════════════════
 # THEMES
 # ══════════════════════════════════════════════════════════════
@@ -109,6 +140,14 @@ def _derive(t: dict) -> dict:
     t.setdefault("scrollbar", t["borderStrong"])
     t.setdefault("tooltipBg", mix(t["appBg"], "#000000", 0.55) if dark else t["title"])
     t.setdefault("tooltipFg", t["title"] if dark else t["surface"])
+    # Text shades of the colours that also serve as chips, dots and bars.
+    # A hue chosen to stand out against code is not always a hue that reads
+    # as a sentence - Catppuccin Latte's amber came to 2.31:1 on its cream
+    # card.  These keep the hue and move only the shade, and only for text;
+    # everything that is not text goes on using the colour as given.
+    for key in ("good", "warn", "danger", "accent", "sub"):
+        t.setdefault(key + "Text", readable_text(t[key], surface))
+        t.setdefault(key + "TextOnApp", readable_text(t[key], t["appBg"]))
     return t
 
 
@@ -137,7 +176,7 @@ DARK = _add(_theme(
     border="#333a45", borderStrong="#454d5a", title="#e9ecf1", text="#c8cdd6", sub="#8b93a1",
     muted="#6f7784", canvasBg="#07080b", canvasVoid="#101319", input="#171b22",
     inputBorder="#3a424e", accent=ACCENT, accentHover=ACCENT_HOVER, accentPressed=ACCENT_PRESSED,
-    accentSoft="#3a2620", onAccent="#ffffff", good="#5cbf6b", goodSoft="#1c2a20", warn="#d9a13f",
+    accentSoft="#3a2620", good="#5cbf6b", goodSoft="#1c2a20", warn="#d9a13f",
     warnSoft="#302719", danger="#e06a6c", dangerSoft="#331d1f", info="#5b9cea",
     shadow="rgba(0, 0, 0, 0.45)", scrollbar="#3a414c", tooltipBg="#0b0d12", tooltipFg="#e9ecf1"))
 
@@ -148,7 +187,7 @@ LIGHT = _add(_theme(
     border="#ced5da", borderStrong="#b6bfc6", title="#232933", text="#39404b", sub="#6b727e",
     muted="#8b929c", canvasBg="#0b0d12", canvasVoid="#15181e", input="#ffffff",
     inputBorder="#c6ced4", accent=ACCENT, accentHover=ACCENT_HOVER, accentPressed=ACCENT_PRESSED,
-    accentSoft="#f7e3db", onAccent="#ffffff", good="#2f8f43", goodSoft="#e3f0e6", warn="#a8730f",
+    accentSoft="#f7e3db", good="#2f8f43", goodSoft="#e3f0e6", warn="#a8730f",
     warnSoft="#f8eeda", danger="#c53437", dangerSoft="#f9e0e1", info="#2a6fbd",
     shadow="rgba(15, 20, 30, 0.14)", scrollbar="#c8ced4", tooltipBg="#232933", tooltipFg="#fafcfd"))
 

@@ -279,6 +279,48 @@ def main():
         ok("and the arrows appear to reach the rest",
            shell.tab_back.isVisible() and shell.tab_forward.isVisible())
 
+    # ── "Save and restart now" must not leave the user with nothing ──
+    # It used to close every tool and then call quit() whatever happened, so a
+    # relaunch that could not start took Annotex off the screen with nothing
+    # coming back - it looked exactly like a crash, right after the person had
+    # asked for a bigger interface.
+    from PySide6.QtCore import QProcess
+    from annotex.shell import window as window_module
+    from annotex.shell import display as display_module
+    said, quit_calls = [], []
+    real_warn, real_command = window_module.messages.warn, display_module.restart_command
+    real_detached, real_quit = QProcess.startDetached, app.quit
+    window_module.messages.warn = lambda *a, **k: said.append(a[-1] if a else "")
+    app.quit = lambda: quit_calls.append(1)
+    try:
+        for label, command, starts, wants_quit in (
+                ("a missing program", ("/no/such/annotex", [], os.getcwd()), False, False),
+                ("a relaunch that will not start",
+                 (sys.executable, ["-c", "pass"], os.getcwd()), False, False),
+                ("a relaunch that starts",
+                 (sys.executable, ["-c", "pass"], os.getcwd()), True, True)):
+            said.clear()
+            quit_calls.clear()
+            display_module.restart_command = lambda c=command: c
+            QProcess.startDetached = staticmethod(lambda *a, _s=starts, **k: _s)
+            trial = ShellWindow(app, ShellSettings(os.path.join(SANDBOX, "restart.json")))
+            trial.show()
+            app.processEvents()
+            returned = trial.restart()
+            if wants_quit:
+                ok("%s: Annotex hands over and quits" % label,
+                   returned is True and len(quit_calls) == 1)
+            else:
+                ok("%s: Annotex stays open and says so" % label,
+                   returned is False and not quit_calls and said and trial.isVisible())
+            trial.close()
+            app.processEvents()
+    finally:
+        window_module.messages.warn = real_warn
+        display_module.restart_command = real_command
+        QProcess.startDetached = real_detached
+        app.quit = real_quit
+
     shell.close()
     print("=" * 60)
     if FAILS:

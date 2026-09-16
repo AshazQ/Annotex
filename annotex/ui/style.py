@@ -57,19 +57,19 @@ QLabel#Title { font-size: %(type_title)s; font-weight: %(weight_title)s; color: 
 QLabel#Headline, QLabel#CardTitle, QLabel#TileTitle, QLabel#SuiteName {
     font-size: %(type_headline)s; font-weight: %(weight_headline)s; color: %(title)s;
 }
-QLabel#Subtitle { font-size: %(type_footnote)s; color: %(sub)s; }
+QLabel#Subtitle { font-size: %(type_footnote)s; color: %(subText)s; }
 QLabel#SectionHeader {
     font-size: %(type_caption)s; font-weight: %(weight_emphasis)s; color: %(muted)s;
 }
 QLabel#StatValue { font-size: %(type_headline)s; font-weight: %(weight_headline)s; color: %(title)s; }
-QLabel#StatLabel { font-size: %(type_caption)s; color: %(sub)s; }
-QLabel#Hint { font-size: %(type_footnote)s; color: %(sub)s; }
-QLabel#HintGood { font-size: %(type_footnote)s; color: %(good)s; }
-QLabel#HintWarn { font-size: %(type_footnote)s; color: %(warn)s; }
-QLabel#HintDanger { font-size: %(type_footnote)s; font-weight: %(weight_emphasis)s; color: %(danger)s; }
+QLabel#StatLabel { font-size: %(type_caption)s; color: %(subText)s; }
+QLabel#Hint { font-size: %(type_footnote)s; color: %(subText)s; }
+QLabel#HintGood { font-size: %(type_footnote)s; color: %(goodText)s; }
+QLabel#HintWarn { font-size: %(type_footnote)s; color: %(warnText)s; }
+QLabel#HintDanger { font-size: %(type_footnote)s; font-weight: %(weight_emphasis)s; color: %(dangerText)s; }
 QLabel#Mono {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
-    font-size: %(type_mono)s; color: %(sub)s;
+    font-size: %(type_mono)s; color: %(subText)s;
 }
 QLabel#Chip, QLabel#ToolChip {
     background: %(surfaceAlt)s; border: %(hairline)s solid %(border)s; border-radius: %(radius_m)s;
@@ -102,7 +102,7 @@ QPushButton#DangerFilled {
 }
 QPushButton#DangerFilled:hover { background: %(dangerHover)s; border-color: %(dangerHover)s; }
 QLabel#MessageText { color: %(text)s; }
-QPushButton#Danger { color: %(danger)s; }
+QPushButton#Danger { color: %(dangerText)s; }
 QPushButton#Danger:hover { background: %(dangerSoft)s; border-color: %(danger)s; }
 QPushButton#Quiet { background: transparent; border-color: transparent; }
 QPushButton#Quiet:hover { background: %(surfaceHover)s; border-color: %(border)s; }
@@ -113,10 +113,10 @@ QPushButton#Tool {
 QPushButton#Tool:hover { background: %(surfaceHover)s; }
 QPushButton#Tool:checked { background: %(accent)s; border-color: %(accent)s; }
 QPushButton#Link {
-    background: transparent; border: %(zero)s; color: %(sub)s;
+    background: transparent; border: %(zero)s; color: %(subText)s;
     padding: %(space_xxs)s %(space_xs)s; min-height: %(zero)s; text-align: left;
 }
-QPushButton#Link:hover { color: %(accent)s; }
+QPushButton#Link:hover { color: %(accentText)s; }
 QToolButton {
     background: transparent; border: %(hairline)s solid transparent;
     border-radius: %(radius_s)s; padding: %(space_xs)s;
@@ -225,7 +225,7 @@ QProgressBar {
 QProgressBar::chunk { background: %(accent)s; border-radius: %(radius_xs)s; }
 QSplitter::handle { background: transparent; }
 QSplitter::handle:hover { background: %(border)s; }
-QStatusBar { background: transparent; color: %(sub)s; font-size: %(type_footnote)s; }
+QStatusBar { background: transparent; color: %(subTextOnApp)s; font-size: %(type_footnote)s; }
 QStatusBar::item { border: %(zero)s; }
 QGroupBox {
     border: %(hairline)s solid %(border)s; border-radius: %(radius_m)s;
@@ -292,12 +292,12 @@ QPushButton#ToastAction {
 QPushButton#ToastAction:hover { color: %(accentHover)s; }
 
 /* ── tones: a label that says how things stand ──────────── */
-QLabel[tone="good"] { color: %(good)s; }
-QLabel[tone="warn"] { color: %(warn)s; }
-QLabel[tone="danger"] { color: %(danger)s; }
-QLabel[tone="accent"] { color: %(accent)s; }
+QLabel[tone="good"] { color: %(goodText)s; }
+QLabel[tone="warn"] { color: %(warnText)s; }
+QLabel[tone="danger"] { color: %(dangerText)s; }
+QLabel[tone="accent"] { color: %(accentText)s; }
 QLabel[tone="info"] { color: %(info)s; }
-QLabel[tone="sub"] { color: %(sub)s; }
+QLabel[tone="sub"] { color: %(subText)s; }
 QLabel[tone="muted"] { color: %(muted)s; }
 QLabel[tone="text"] { color: %(text)s; }
 QLabel[tone="title"] { color: %(title)s; }
@@ -312,7 +312,7 @@ QFrame[tool="%(tool)s"] QPushButton#Primary {
     background: %(accent)s; border-color: %(accent)s; color: %(onAccent)s;
 }
 QFrame[tool="%(tool)s"] QPushButton#Primary:hover { background: %(accentHover)s; border-color: %(accentHover)s; }
-QFrame[tool="%(tool)s"] QPushButton#Link:hover { color: %(accent)s; }
+QFrame[tool="%(tool)s"] QPushButton#Link:hover { color: %(accentText)s; }
 QFrame[tool="%(tool)s"] QLabel#ToolChip {
     background: %(accentSoft)s; color: %(accent)s; border-color: transparent;
     font-weight: %(weight_badge)s;
