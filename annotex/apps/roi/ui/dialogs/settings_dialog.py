@@ -310,12 +310,18 @@ class SettingsDialog(Dialog):
         if dialog.exec() != Dialog.DialogCode.Accepted:
             return
         chosen = dialog.value()
-        if chosen and chosen in sc.RESERVED:
+        fmt = QKeySequence.SequenceFormat.PortableText
+
+        def same(a, b):
+            # Del and Delete, Shift+Ctrl and Ctrl+Shift: one key, one command.
+            return bool(a and b) and QKeySequence(a).toString(fmt) == QKeySequence(b).toString(fmt)
+
+        if chosen and any(same(chosen, key) for key in sc.RESERVED):
             messages.inform(self, "Reserved key",
                                     "%s is used by the canvas itself." % chosen)
             return
         for other_id, key in self.keys.items():
-            if other_id != action_id and key and key == chosen:
+            if other_id != action_id and same(key, chosen):
                 answer = messages.ask(
                     self, "Already used",
                     "%s is already bound to \"%s\".\n\nMove it to \"%s\"?"

@@ -30,6 +30,10 @@ from ..ui.jobs import open_location
 
 SELFTEST_TIMEOUT = 15 * 60          # seconds; the full set is not quick
 
+# A test thread still winding down when its window closed is held here, where
+# nothing destroys it before it has finished.
+_STRAGGLERS = []
+
 
 def selftest_command():
     """How to run the offline checks again, as a separate process.
@@ -62,17 +66,38 @@ class _SelfTestRun(QObject):
 
     finished = Signal(int, str)
 
+    def __init__(self):
+        super().__init__()
+        self._process = None
+        self._stopped = False
+
     def run(self):
         try:
-            done = subprocess.run(selftest_command(), capture_output=True, text=True,
-                                  timeout=SELFTEST_TIMEOUT)
-            output = (done.stdout or "") + (done.stderr or "")
-            self.finished.emit(int(done.returncode), output)
-        except subprocess.TimeoutExpired:
-            self.finished.emit(2, "The checks did not finish within %d minutes and "
-                                  "were stopped." % (SELFTEST_TIMEOUT // 60))
+            self._process = subprocess.Popen(selftest_command(), stdout=subprocess.PIPE,
+                                             stderr=subprocess.PIPE, text=True)
+            if self._stopped:
+                self._process.kill()
+            try:
+                out, err = self._process.communicate(timeout=SELFTEST_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self._process.communicate()
+                self.finished.emit(2, "The checks did not finish within %d minutes and "
+                                      "were stopped." % (SELFTEST_TIMEOUT // 60))
+                return
+            self.finished.emit(int(self._process.returncode), (out or "") + (err or ""))
         except Exception as exc:                                # noqa: BLE001
             self.finished.emit(2, "The checks could not be started: %s" % exc)
+
+    def stop(self) -> None:
+        """End the checks early - the window is closing.  Any thread."""
+        self._stopped = True
+        process = self._process
+        if process is not None and process.poll() is None:
+            try:
+                process.kill()
+            except Exception:
+                pass
 
 
 class DiagnosticsDialog(Dialog):
@@ -191,12 +216,22 @@ class DiagnosticsDialog(Dialog):
                       "sends it on.", "danger")
 
     def _stop_thread(self) -> None:
-        thread, self._thread, self._runner = self._thread, None, None
+        thread, runner = self._thread, self._runner
+        self._thread, self._runner = None, None
         if thread is None:
             return
+        # The thread is blocked waiting on the test process, which quit() alone
+        # cannot interrupt - and a QThread destroyed while it still runs takes
+        # the whole application down with it.  End the process first.
+        if runner is not None:
+            runner.stop()
         try:
             thread.quit()
-            thread.wait(3000)
+            if not thread.wait(10000):
+                # Still going: let it finish on its own rather than be
+                # destroyed with this dialog.
+                thread.setParent(None)
+                _STRAGGLERS.append((thread, runner))
         except Exception:
             pass
 
