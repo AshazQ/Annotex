@@ -109,13 +109,17 @@ class ImageConvertPage(MediaToolPage):
         exact_row.addWidget(self.height_box)
         self.resize_stack.addWidget(exact)
         layout.addWidget(self.resize_stack)
-        self.keep_aspect = QCheckBox("Keep the proportions (fit inside the box)")
+        self.keep_aspect = QCheckBox("Keep the proportions")
+        self.keep_aspect.setToolTip("Fit the picture inside the box without stretching it")
         self.never_upscale = QCheckBox("Never make an image larger")
         layout.addWidget(self.keep_aspect)
         layout.addWidget(self.never_upscale)
 
         layout.addWidget(section_label("Metadata"))
-        self.strip = QCheckBox("Remove EXIF (camera, GPS, time) and apply its rotation")
+        self.strip = QCheckBox("Remove EXIF, keep the rotation")
+        self.strip.setToolTip("Remove the camera, GPS and time details, and turn the picture "
+                              "the way EXIF said it should be shown, so it still stands up "
+                              "the right way without them")
         layout.addWidget(self.strip)
 
         layout.addWidget(section_label("Names"))

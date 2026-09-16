@@ -87,7 +87,8 @@ class FramesPage(VideoPage):
         layout.addWidget(self.estimate)
 
         layout.addWidget(section_label("Part of the video"))
-        self.use_range = QCheckBox("Only between a start and an end time")
+        self.use_range = QCheckBox("Only between two times")
+        self.use_range.setToolTip("Only take frames between a start and an end time")
         layout.addWidget(self.use_range)
         self.start = QLineEdit("00:00:00")
         self.end = QLineEdit("")
@@ -110,7 +111,14 @@ class FramesPage(VideoPage):
         self.max_frames = QSpinBox()
         self.max_frames.setRange(0, 1000000)
         self.max_frames.setSpecialValueText("no limit")
-        layout.addWidget(row(QLabel("At most"), self.max_frames, QLabel("frames per video")))
+        # One label and the number, not a sentence around it: three pieces in a
+        # row were the widest thing in the panel, and with a wide font they
+        # pushed the whole panel past what a laptop screen can give it.
+        self.max_frames.setToolTip("The most frames to take from each video.  "
+                                   "No limit takes every frame the settings above pick.")
+        limit = QLabel("Frame limit")
+        limit.setToolTip(self.max_frames.toolTip())
+        layout.addWidget(row(limit, self.max_frames))
 
         layout.addWidget(section_label("Output"))
         self.output = OutputChooser("Beside each video, in <name>_frames")

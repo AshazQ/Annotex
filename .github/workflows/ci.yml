@@ -47,17 +47,24 @@ jobs:
       - name: Install
         run: python -m pip install -r requirements.txt onnxruntime numpy onnx
 
+      # Whether a tool fits a small laptop screen depends on the fonts.  Qt's
+      # offscreen platform uses the system's fonts on Linux, but on Windows
+      # and macOS it has none of the platform's own - the first run measured
+      # Video to Images at 1701 px wide offscreen on Windows, and 1064 px with
+      # Windows' real fonts.  So there the layout checks are left to the step
+      # after, which runs them on the real desktop.
       - name: Every test suite
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONIOENCODING: utf-8
-        run: python tests/run_all.py
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python tests/run_all.py
+          else
+            python tests/run_all.py --except "workspace & display"
+          fi
 
-      # Whether a tool fits a small laptop screen depends on the fonts, and
-      # the offscreen platform above does not use the ones people have.  On
-      # Windows and macOS the runner has a real desktop, so the layout checks
-      # run again there with the platform's own fonts - that is the verdict
-      # that matters.  They run even when the step above failed.
       - name: Layout, with this platform's own fonts
         if: ${{ !cancelled() && runner.os != 'Linux' }}
         env:

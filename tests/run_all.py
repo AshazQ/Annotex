@@ -4,6 +4,8 @@
     python tests/run_all.py                      every suite
     python tests/run_all.py "workspace & display" shell
                                                  just these, by name or file
+    python tests/run_all.py --except "workspace & display"
+                                                 all but this one
 
 Each suite runs in its own throwaway home folder and against a time limit,
 so none of them can touch your own settings, and a suite that hangs says
@@ -75,8 +77,14 @@ def sandbox_env(base):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    skipped = []
+    while "--except" in argv:
+        at = argv.index("--except")
+        skipped += argv[at + 1:at + 2]
+        del argv[at:at + 2]
     wanted = [a for a in argv if not a.startswith("-")]
-    suites = [(n, s) for n, s in SUITES if not wanted or n in wanted or s in wanted]
+    suites = [(n, s) for n, s in SUITES if (not wanted or n in wanted or s in wanted)
+              and n not in skipped and s not in skipped]
     if wanted and not suites:
         print("No suite called %s.  The suites are: %s"
               % (", ".join(wanted), ", ".join(n for n, _s in SUITES)))

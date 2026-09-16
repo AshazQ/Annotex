@@ -99,8 +99,18 @@ def main():
         page = shell.pages[tool]
         canvas = page.canvas
         share = canvas.width() * canvas.height() / float(shell.width() * shell.height())
-        ok("%s: with everything open the image has %.0f %% of a 1366x768 window" % (tool, share * 100),
-           share > 0.42)
+        # A real desktop will not let a window be bigger than its screen, and a
+        # build server's screen can be smaller than 1366x768.  A smaller window
+        # gives the fixed-width panels a bigger share, so the number would be
+        # about that screen, not about this layout - it is only judged when
+        # the window really is the size the check is about.
+        if shell.width() >= 1366 and shell.height() >= 768:
+            ok("%s: with everything open the image has %.0f %% of a 1366x768 window"
+               % (tool, share * 100), share > 0.42)
+        else:
+            print("  --  %s: the screen here only allows a %dx%d window, so the image's "
+                  "share of a 1366x768 one cannot be measured" % (tool, shell.width(),
+                                                                   shell.height()))
         ok("%s: the tool fits a narrow screen (needs %d px)" % (tool, page.minimumSizeHint().width()),
            page.minimumSizeHint().width() <= 1000)
         rail = page.workspace.rail

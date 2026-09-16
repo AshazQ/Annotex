@@ -24,6 +24,43 @@ from .palette import install_theme, resolve_theme, toggled_setting
 from .theme_picker import theme_menu
 
 
+# A drop-down keeps room for this many characters of its choice and cuts the
+# rest short, rather than making the whole options panel as wide as its
+# longest choice.  The list it opens still shows every choice in full.
+CHOICE_CHARACTERS = 14
+
+
+def _let_choices_narrow(holder) -> None:
+    """Every drop-down in an options panel may be narrower than its text.
+
+    A drop-down asks, by default, for the width of its longest choice, and
+    that one number becomes the narrowest the whole panel can be.  How wide
+    that is depends on the font: with DejaVu Sans - the usual font on a
+    Linux desktop - "Beside each video, in <name>_frames" alone was wider
+    than the Video to Images panel could be on a 1093 px screen.  So a choice
+    too long for the room is cut short with an ellipsis, and its full text is
+    in the tooltip and in the list the drop-down opens."""
+    try:
+        from PySide6.QtWidgets import QComboBox
+    except Exception:                                   # pragma: no cover
+        return
+    for combo in holder.findChildren(QComboBox):
+        if combo.isEditable():
+            continue
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(CHOICE_CHARACTERS)
+        view = combo.view()
+        if view is not None:
+            # The list is not bound by the panel: let it be as wide as its
+            # longest choice, so nothing in it is ever cut short.
+            view.setMinimumWidth(view.sizeHintForColumn(0) + 24)
+
+        def show_whole(_index=0, box=combo):
+            box.setToolTip(box.currentText())
+        combo.currentIndexChanged.connect(show_whole)
+        show_whole()
+
+
 def tool_settings(tool_id, defaults, path=None):
     folder = first_writable([user_data_dir() / tool_id])
     merged = {"theme": "dark"}
@@ -188,6 +225,8 @@ class MediaToolPage(QMainWindow):
         asks for the width its controls actually need, and the pane beside it,
         which scrolls, gives way instead."""
         panels = []
+        for _frame, holder, _scroll in self._option_cards:
+            _let_choices_narrow(holder)
         for frame, holder, scroll in self._option_cards:
             wanted = holder.minimumSizeHint().width()
             if wanted <= 0:

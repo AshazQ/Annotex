@@ -186,9 +186,13 @@ def main():
         expected = not sys.platform.startswith("linux")
         ok("with no display at all, no window is attempted",
            app_module._has_display() is expected)
-        ok("and asking for one anyway is still safe",
-           app_module.alert("Annotex", "no display either") is False
-           or not sys.platform.startswith("linux"))
+        # Only on Linux is "no display variable" the same as "no display".
+        # On Windows and macOS there is always a display, so with the platform
+        # variable gone somebody is looking, and alert() rightly opens a real
+        # window - which, in a test, waits for a click for ever.
+        if sys.platform.startswith("linux"):
+            ok("and asking for one anyway is still safe",
+               app_module.alert("Annotex", "no display either") is False)
     finally:
         for name, value in (("DISPLAY", saved_display),
                             ("WAYLAND_DISPLAY", saved_wayland),
