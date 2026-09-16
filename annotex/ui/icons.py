@@ -32,7 +32,7 @@ _BODY = {
     # duplicate.
     "copy": '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/><path d="M12 13.5h5M12 16.5h3.5"/>',
     "cut": '<circle cx="6.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M8.3 15.7 18 4"/><path d="M15.7 15.7 6 4"/>',
-    "duplicate": '<rect x="4" y="4" width="12" height="12" rx="2"/><path d="M8 20h8a4 4 0 0 0 4-4V8"/><path d="M10 10h4M12 8v4"/>',
+    "duplicate": '<rect x="3.5" y="6.5" width="11" height="11" rx="2"/><path d="M19 5v7M15.5 8.5h7"/>',
     "clear": '<path d="M4 4 20 20M20 4 4 20"/>',
     "zoom_in": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M10.5 7.5v6M7.5 10.5h6"/>',
     "zoom_out": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M7.5 10.5h6"/>',

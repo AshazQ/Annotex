@@ -195,24 +195,67 @@ def main():
         if left < before and "--update" not in sys.argv:
             print("  ..  fewer than the baseline - run with --update to lock the progress in")
 
-    # ── two buttons side by side must not be the same drawing ──
+    # ── no two buttons in a rail may be the same drawing ──
     # Duplicate, Copy and Cut were all drawn as the same two overlapping
-    # squares, so in the rail Duplicate and Copy were indistinguishable.
-    from annotex.apps.labelimg.ui import shortcuts as box_keys
-    from annotex.apps.roi.ui import shortcuts as roi_keys
-    from annotex.apps.shapes.ui import shortcuts as shape_keys
-    for name, module in (("LabelImg Master", box_keys), ("ROI Studio", roi_keys),
-                         ("LabelImg Shapes", shape_keys)):
-        seen = {}
-        for row in module.ACTIONS:
-            action_id, icon = row[0], row[4]
-            # Only the commands that act on a selection: a shared icon for,
-            # say, two align commands in a menu is fine.
-            if any(word in action_id for word in ("copy", "cut", "duplicate")):
-                seen.setdefault(icon, []).append(action_id)
-        shared = {icon: ids for icon, ids in seen.items() if len(ids) > 1}
-        ok("%s: copy, cut and duplicate are drawn differently%s"
-           % (name, "" if not shared else " (%s)" % shared), not shared)
+    # squares, so Duplicate and Copy sat side by side in the rail looking
+    # identical.  Checking the action tables was not enough: LabelImg Shapes
+    # names its icons where it builds its actions, not in its table, so a
+    # table-only check passed while the rail still showed two of the same.
+    # These are the pixels the rail actually draws.
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtWidgets import QApplication
+    import tempfile
+    picture_app = QApplication.instance() or QApplication(sys.argv[:1])
+    from annotex.ui.dialogs import messages as _messages
+    _messages.ask = lambda *a, **k: False
+    _messages.inform = _messages.warn = _messages.error = lambda *a, **k: None
+    from annotex.config import ShellSettings
+    from annotex.shell.window import ShellWindow
+    from annotex.ui import icons as icon_set
+
+    sandbox = tempfile.mkdtemp(prefix="annotex_rail_")
+    for index in range(2):
+        picture = QImage(400, 300, QImage.Format.Format_RGB32)
+        picture.fill(QColor(50, 90, 130))
+        picture.save(os.path.join(sandbox, "f%d.png" % index))
+    rail_shell = ShellWindow(picture_app, ShellSettings(os.path.join(sandbox, "s.json")))
+    rail_shell.resize(1400, 900)
+    rail_shell.show()
+    for tool_id, name in (("labelimg", "LabelImg Master"), ("shapes", "LabelImg Shapes"),
+                          ("roi", "ROI Studio")):
+        page = rail_shell.open_tool(tool_id, sandbox)
+        for _ in range(25):
+            picture_app.processEvents()
+        drawn, clashes = {}, []
+        for group in ("tool_buttons", "quick_buttons", "edit_buttons", "window_buttons"):
+            for key, button in (getattr(page, group, {}) or {}).items():
+                image = button.icon().pixmap(QSize(19, 19)).toImage()
+                if image.isNull():
+                    continue
+                pixels = tuple(image.pixelColor(x, y).rgba()
+                               for x in range(image.width()) for y in range(image.height()))
+                if pixels in drawn:
+                    clashes.append("%s == %s" % (key, drawn[pixels]))
+                else:
+                    drawn[pixels] = key
+        ok("%s: every button in the rail is a different drawing%s"
+           % (name, "" if not clashes else " (%s)" % "; ".join(clashes[:3])), not clashes)
+
+        # ...and with room to spare the rail shows all of them, without
+        # scrolling.  Its size hint left out the pill's own hairline border, so
+        # it asked for two pixels less than it needed and scrolled on every
+        # screen - and the rounding to whole buttons turned those two pixels
+        # into a whole button nobody could see.
+        rail = page.workspace.rail
+        viewport = rail.scroll.viewport()
+        hidden = [b for b in rail.buttons
+                  if b.mapTo(viewport, b.rect().topLeft()).y() < 0
+                  or b.mapTo(viewport, b.rect().topLeft()).y() + b.height() > viewport.height()]
+        ok("%s: on a roomy window the rail shows every button%s"
+           % (name, "" if not hidden else " (%d of %d hidden)" % (len(hidden), len(rail.buttons))),
+           not hidden)
+    rail_shell.close()
 
     # ── a thumbnail is clipped to the frame that holds it ──
     # The picture was clipped square while its frame was drawn rounded, so the

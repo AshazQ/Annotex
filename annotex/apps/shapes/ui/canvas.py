@@ -892,6 +892,38 @@ class ShapeCanvas(ImageViewport):
         self.selectionChanged.emit()
         self.update()
 
+    def remove_hovered_vertex(self) -> bool:
+        """Take out the point under the pointer.  For the R key.
+
+        Thinning a traced outline meant Ctrl+right-clicking every point.  R
+        takes the one under the pointer and then looks again at the same place,
+        so a held key keeps going without the mouse moving."""
+        vertex = self._hover_vertex
+        if vertex is None:
+            pos = self.mapFromGlobal(QCursor.pos())
+            if not self.rect().contains(pos):
+                return False
+            vertex = self._vertex_at(QPointF(pos))
+        if vertex is None:
+            return False
+        index, vi = vertex
+        if not (0 <= index < len(self.shapes)):
+            return False
+        shape = self.shapes[index]
+        # Only outlines have points to spare; a box, circle or ellipse is
+        # reshaped by its handles.
+        if shape.kind not in POINT_KINDS:
+            self.statusMessage.emit("%s is reshaped with its handles"
+                                    % shape.kind_label, "warning")
+            return False
+        before = len(shape.points)
+        self.delete_vertex(index, vi)
+        if len(shape.points) == before:
+            return False                      # refused: already at the minimum
+        self._update_hover(QPointF(self.mapFromGlobal(QCursor.pos())))
+        self.update()
+        return True
+
     def delete_selected(self) -> int:
         indices = set(self.selected_indices())
         if not indices:
@@ -1055,6 +1087,9 @@ class ShapeCanvas(ImageViewport):
                     left = len(self._draft)
                     self.statusMessage.emit("Last point removed  ·  %d left" % left if left
                                             else "Last point removed - the shape is empty", "info")
+                return True
+        if key == Qt.Key.Key_R and not mods:
+            if self.remove_hovered_vertex():
                 return True
         return False
 

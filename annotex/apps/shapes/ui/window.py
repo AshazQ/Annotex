@@ -198,16 +198,18 @@ class ShapesWindow(QMainWindow):
         a("undo", "Undo", "Ctrl+Z", self.undo, "undo")
         a("redo", "Redo", ("Ctrl+Shift+Z", "Ctrl+Y"), self.redo, "redo")
         a("edit_class", "Change class…", "Ctrl+E", self.edit_label, "tag")
-        a("duplicate", "Duplicate", "Ctrl+D", self.duplicate_shapes, "copy")
+        a("duplicate", "Duplicate", "Ctrl+D", self.duplicate_shapes, "duplicate")
         a("copy_shapes", "Copy the selected shapes", "Ctrl+C",
           lambda: self.copy_shapes(cut=False), "copy")
         a("cut_shapes", "Cut the selected shapes", "Ctrl+X",
-          lambda: self.copy_shapes(cut=True), "copy")
+          lambda: self.copy_shapes(cut=True), "cut")
         a("paste_shapes", "Paste copied shapes", "Ctrl+V", self.paste_shapes, "paste")
         a("copy_previous", "Add the previous image's shapes", "Ctrl+Shift+V",
           self.copy_previous, "layers")
         a("ai_model", "AI model (SAM)…", "", self.open_ai_model, "magic")
         a("delete", "Delete", "Delete", self.delete_shapes, "trash")
+        a("remove_vertex", "Remove the point under the pointer", "R",
+          lambda: self.canvas.remove_hovered_vertex(), "trash")
         a("select_all", "Select all", "Ctrl+A", lambda: self.canvas.select_all(), "grid")
         a("rotate_left", "Rotate 15° left", "[", lambda: self.canvas.rotate_selected(-15), "rotate")
         a("rotate_right", "Rotate 15° right", "]", lambda: self.canvas.rotate_selected(15), "rotate")
@@ -304,7 +306,9 @@ class ShapesWindow(QMainWindow):
             rail.add(button)
         rail.add_separator()
         self.edit_buttons = {}
-        for action_id in ("undo", "redo", "duplicate", "copy_shapes", "paste_shapes",
+        # Duplicate is Copy and Paste in one step; drawn beside them it read as a
+        # second Copy.  It keeps Ctrl+D and the Edit menu.
+        for action_id in ("undo", "redo", "copy_shapes", "paste_shapes",
                           "delete", "delete_image"):
             button = self._button_for(action_id)
             self.edit_buttons[action_id] = button

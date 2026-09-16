@@ -129,15 +129,7 @@ class ToolRail(QFrame):
         """Show whole buttons only.  A rail too short for every tool scrolls,
         and a half-cut circle at the bottom edge would look like a fault."""
         step = RAIL_BUTTON[1]
-        # Measured, not assumed: the pill is drawn with a hairline border, so
-        # its own height is two pixels more than what is left for the buttons.
-        # Subtracting only the layout's padding overstated the room by those
-        # two pixels, and a column that came within them of fitting was judged
-        # to fit - leaving the last circle cut.  contentsRect() already has the
-        # border taken off, and is not affected by the cap set below, so this
-        # cannot feed back on itself.
-        margins = self.layout().contentsMargins()
-        room = self.contentsRect().height() - margins.top() - margins.bottom()
+        room = self.contentsRect().height() - self._padding()
         body = self.scroll.widget()
         wanted = body.sizeHint().height() if body is not None else 0
         if room >= wanted:
@@ -145,10 +137,25 @@ class ToolRail(QFrame):
             return
         self.scroll.setMaximumHeight(max(step, (room // step) * step))
 
+    def _padding(self) -> int:
+        """The room the buttons do not get: the layout's own top and bottom."""
+        margins = self.layout().contentsMargins()
+        return margins.top() + margins.bottom()
+
+    def _border(self) -> int:
+        """The pill's hairline, top and bottom, which the stylesheet draws."""
+        frame = self.contentsMargins()
+        return frame.top() + frame.bottom()
+
     def sizeHint(self) -> QSize:
+        # The pill is drawn with a hairline border.  Asking only for the
+        # buttons plus the layout's padding left the rail two pixels short of
+        # its own column on every screen, so it scrolled even on a large
+        # monitor - and the rounding below turned those two pixels into a
+        # whole hidden button.  Ask for what it actually takes to draw.
         body = self.scroll.widget()
-        height = (body.sizeHint().height() if body is not None else 0) + 16
-        return QSize(RAIL_WIDTH, height)
+        inner = body.sizeHint().height() if body is not None else 0
+        return QSize(RAIL_WIDTH, inner + self._padding() + self._border())
 
     def minimumSizeHint(self) -> QSize:
         return QSize(RAIL_WIDTH, 60)
