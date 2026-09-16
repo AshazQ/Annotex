@@ -158,6 +158,7 @@ class MainWindow(QMainWindow):
             "redo": self.redo,
             "redo_alt": self.redo,
             "delete_roi": lambda: self.canvas.delete_selected(),
+            "remove_vertex": lambda: self.canvas.remove_hovered_vertex(),
             "duplicate_roi": lambda: self.canvas.duplicate_selected(),
             "select_all": lambda: self.canvas.select_all(),
             "clear_all": self.clear_all,

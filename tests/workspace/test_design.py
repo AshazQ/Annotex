@@ -195,6 +195,59 @@ def main():
         if left < before and "--update" not in sys.argv:
             print("  ..  fewer than the baseline - run with --update to lock the progress in")
 
+    # ── two buttons side by side must not be the same drawing ──
+    # Duplicate, Copy and Cut were all drawn as the same two overlapping
+    # squares, so in the rail Duplicate and Copy were indistinguishable.
+    from annotex.apps.labelimg.ui import shortcuts as box_keys
+    from annotex.apps.roi.ui import shortcuts as roi_keys
+    from annotex.apps.shapes.ui import shortcuts as shape_keys
+    for name, module in (("LabelImg Master", box_keys), ("ROI Studio", roi_keys),
+                         ("LabelImg Shapes", shape_keys)):
+        seen = {}
+        for row in module.ACTIONS:
+            action_id, icon = row[0], row[4]
+            # Only the commands that act on a selection: a shared icon for,
+            # say, two align commands in a menu is fine.
+            if any(word in action_id for word in ("copy", "cut", "duplicate")):
+                seen.setdefault(icon, []).append(action_id)
+        shared = {icon: ids for icon, ids in seen.items() if len(ids) > 1}
+        ok("%s: copy, cut and duplicate are drawn differently%s"
+           % (name, "" if not shared else " (%s)" % shared), not shared)
+
+    # ── a thumbnail is clipped to the frame that holds it ──
+    # The picture was clipped square while its frame was drawn rounded, so the
+    # corners of every thumbnail stood outside the frame.
+    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtWidgets import QApplication
+    import tempfile
+    picture_app = QApplication.instance() or QApplication(sys.argv[:1])
+    from annotex.ui.filmstrip import FilmStrip, PADDING
+    from annotex.ui import palette as palette_module
+    folder = tempfile.mkdtemp(prefix="annotex_strip_")
+    for index in range(2):
+        picture = QImage(200, 150, QImage.Format.Format_RGB32)
+        picture.fill(QColor(255, 0, 0))            # loud, so a stray corner shows
+        picture.save(os.path.join(folder, "p%d.png" % index))
+    strip = FilmStrip()
+    strip.set_theme(palette_module.resolve_theme("dark", picture_app))
+    strip.resize(320, 104)
+    strip.set_batch(folder, ["p0.png", "p1.png"], {})
+    strip.show()
+    import time as _time
+    limit = _time.time() + 15
+    while _time.time() < limit and len(strip._thumbs) < 2:
+        picture_app.processEvents()
+        _time.sleep(0.05)
+    for _ in range(10):
+        picture_app.processEvents()
+    shot = strip.grab().toImage()
+    corner = shot.pixelColor(PADDING + 1, PADDING + 1)
+    middle = shot.pixelColor(PADDING + 40, PADDING + 30)
+    ok("a thumbnail's picture reaches the middle of its frame", middle.red() > 180)
+    ok("and its corner is cut to the frame's curve, not left square",
+       corner.red() < 150)
+    strip.close()
+
     print("=" * 60)
     if FAILS:
         print("DESIGN TESTS FAILED: %s" % ", ".join(FAILS))

@@ -204,6 +204,65 @@ def main():
         else:
             tool.close()
 
+    # ── ROI Studio: taking points back while drawing ──
+    # Ctrl+Z did nothing mid-polygon: the window's Undo is switched off until
+    # there is a finished shape to undo, so its shortcut never fired and only
+    # Backspace worked - while LabelImg Shapes took the point back.  And
+    # thinning a traced outline meant Ctrl+right-clicking every point.
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtTest import QTest
+    from annotex.config import ShellSettings
+    from annotex.shell.window import ShellWindow
+    from annotex.apps.roi.core.model import Shape as RoiShape
+
+    strokes = os.path.join(SANDBOX, "roi_keys")
+    os.makedirs(strokes, exist_ok=True)
+    for index in range(2):
+        picture = QImage(600, 400, QImage.Format.Format_RGB32)
+        picture.fill(QColor(50, 80, 110))
+        picture.save(os.path.join(strokes, "frame_%d.png" % index))
+
+    roi_shell = ShellWindow(app, ShellSettings(os.path.join(SANDBOX, "roi_keys.json")))
+    roi_shell.show()
+    roi_page = roi_shell.open_tool("roi", strokes)
+    for _ in range(15):
+        app.processEvents()
+    roi_canvas = roi_page.canvas
+
+    roi_canvas._draft = [QPointF(20, 20), QPointF(120, 30), QPointF(140, 110)]
+    ok("ROI: Undo is still switched off mid-polygon",
+       not roi_page.act("undo").isEnabled())
+    QTest.keyClick(roi_canvas, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    app.processEvents()
+    ok("ROI: Ctrl+Z takes back the last point while drawing",
+       len(roi_canvas._draft) == 2)
+    QTest.keyClick(roi_canvas, Qt.Key.Key_Backspace)
+    app.processEvents()
+    ok("ROI: Backspace still does the same", len(roi_canvas._draft) == 1)
+
+    roi_canvas._draft = []
+    roi_canvas.set_shapes([RoiShape.polygon(
+        [(80, 80), (280, 80), (280, 240), (180, 280), (80, 240)])])
+    app.processEvents()
+    roi_canvas._hover_vertex = (0, 3)
+    QTest.keyClick(roi_canvas, Qt.Key.Key_R)
+    app.processEvents()
+    ok("ROI: R removes the point under the pointer",
+       len(roi_canvas.shapes[0].points) == 4)
+    roi_canvas._hover_vertex = (0, 2)
+    QTest.keyClick(roi_canvas, Qt.Key.Key_R)
+    app.processEvents()
+    ok("ROI: and again, so the key can be held down",
+       len(roi_canvas.shapes[0].points) == 3)
+    roi_canvas._hover_vertex = (0, 1)
+    QTest.keyClick(roi_canvas, Qt.Key.Key_R)
+    app.processEvents()
+    ok("ROI: but never below the three a polygon needs",
+       len(roi_canvas.shapes[0].points) == 3)
+    roi_shell.close()
+    app.processEvents()
+
     # ── the shell must not eat a key the tool on show binds ──
     # The shell's own keys are application shortcuts, which outrank a tool's
     # window shortcuts: Ctrl+1 jumped to a tool instead of zooming, and Ctrl+W

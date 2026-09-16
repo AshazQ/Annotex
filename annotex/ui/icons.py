@@ -26,7 +26,13 @@ _BODY = {
     "redo": '<path d="M20 10h-9a5 5 0 0 0 0 10h3"/><path d="M16 5.5 20.5 10 16 14.5"/>',
     "save": '<path d="M5 4h11l3 3v13H5Z"/><path d="M8 4v6h7V4"/><rect x="8" y="13" width="8" height="7"/>',
     "trash": '<path d="M4 7h16"/><path d="M10 4h4"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>',
-    "copy": '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+    # Copy, cut and duplicate sat next to each other in the rail drawn as the
+    # same two overlapping squares, so there was no telling them apart: one
+    # sheet over another for copy, scissors for cut, a plate with a plus for
+    # duplicate.
+    "copy": '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/><path d="M12 13.5h5M12 16.5h3.5"/>',
+    "cut": '<circle cx="6.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M8.3 15.7 18 4"/><path d="M15.7 15.7 6 4"/>',
+    "duplicate": '<rect x="4" y="4" width="12" height="12" rx="2"/><path d="M8 20h8a4 4 0 0 0 4-4V8"/><path d="M10 10h4M12 8v4"/>',
     "clear": '<path d="M4 4 20 20M20 4 4 20"/>',
     "zoom_in": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M10.5 7.5v6M7.5 10.5h6"/>',
     "zoom_out": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M7.5 10.5h6"/>',

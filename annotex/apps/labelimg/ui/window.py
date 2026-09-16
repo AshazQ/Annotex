@@ -387,7 +387,10 @@ class LabelImgWindow(QMainWindow):
             rail.add(button)
         rail.add_separator()
         self.quick_buttons = {}
-        for action_id in ("undo", "redo", "delete_box", "duplicate_box",
+        # Duplicate is Copy and Paste in one step, and drawn beside them it
+        # read as a second Copy button.  It keeps Ctrl+D and its place in the
+        # Edit menu; the rail carries the two that are not the same thing.
+        for action_id in ("undo", "redo", "delete_box",
                           "copy_boxes", "paste_boxes", "append_previous", "clear_all",
                           "delete_image"):
             button = self._tool_button(action_id)

@@ -777,6 +777,31 @@ class Canvas(ImageViewport):
         self.update()
         return True
 
+    def remove_hovered_vertex(self) -> bool:
+        """Take out the point under the pointer.  For the R key.
+
+        Tidying a traced outline means dropping a run of points, and holding
+        Ctrl while right-clicking each one is slow.  R takes the one under the
+        pointer, then looks again at the same place so the next press - or a
+        held key repeating - takes the next one without the mouse moving."""
+        vertex = self._hover_vertex
+        if vertex is None:
+            pos = self.mapFromGlobal(QCursor.pos())
+            if not self.rect().contains(pos):
+                return False
+            vertex = self._vertex_at(QPointF(pos))
+        if vertex is None:
+            return False
+        index, vi = vertex
+        before = len(self.shapes[index].points) if 0 <= index < len(self.shapes) else 0
+        self.delete_vertex(index, vi)
+        after = len(self.shapes[index].points) if 0 <= index < len(self.shapes) else 0
+        if after == before:
+            return False                      # refused: too few points, or a box
+        self._update_hover(QPointF(self.mapFromGlobal(QCursor.pos())))
+        self.update()
+        return True
+
     def _append_shape(self, shape: Shape, label: str) -> bool:
         if len(self.shapes) >= MAX_POLYS_PER_IMAGE:
             self.statusMessage.emit(
@@ -1044,9 +1069,19 @@ class Canvas(ImageViewport):
         if key == Qt.Key.Key_Escape:
             if self.cancel_draft():
                 return
-        if key == Qt.Key.Key_Backspace and self._draft:
+        # Ctrl+Z as well as Backspace: mid-polygon it takes back the last
+        # point.  The window's Undo is switched off until there is a finished
+        # shape to undo, so its shortcut never fires while a polygon is being
+        # drawn - the canvas has to answer the key itself, exactly as LabelImg
+        # Shapes does.
+        undo_key = (key == Qt.Key.Key_Z
+                    and bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier))
+        if (key == Qt.Key.Key_Backspace or undo_key) and self._draft:
             self.undo_draft_point()
             return
+        if key == Qt.Key.Key_R and not event.modifiers():
+            if self.remove_hovered_vertex():
+                return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):

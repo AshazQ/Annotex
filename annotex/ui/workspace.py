@@ -129,7 +129,15 @@ class ToolRail(QFrame):
         """Show whole buttons only.  A rail too short for every tool scrolls,
         and a half-cut circle at the bottom edge would look like a fault."""
         step = RAIL_BUTTON[1]
-        room = self.height() - 16                     # the pill's own padding
+        # Measured, not assumed: the pill is drawn with a hairline border, so
+        # its own height is two pixels more than what is left for the buttons.
+        # Subtracting only the layout's padding overstated the room by those
+        # two pixels, and a column that came within them of fitting was judged
+        # to fit - leaving the last circle cut.  contentsRect() already has the
+        # border taken off, and is not affected by the cap set below, so this
+        # cannot feed back on itself.
+        margins = self.layout().contentsMargins()
+        room = self.contentsRect().height() - margins.top() - margins.bottom()
         body = self.scroll.widget()
         wanted = body.sizeHint().height() if body is not None else 0
         if room >= wanted:

@@ -14,7 +14,7 @@ import os
 
 from PySide6.QtCore import (QObject, QRect, QRectF, QRunnable, Qt,
                             QThreadPool, Signal, Slot)
-from PySide6.QtGui import (QBrush, QColor, QImage, QPainter, QPen,
+from PySide6.QtGui import (QBrush, QColor, QImage, QPainter, QPainterPath, QPen,
                            QPixmap)
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -24,6 +24,10 @@ from .palette import qcolor
 THUMB_W, THUMB_H = 96, 72
 GAP = 8
 PADDING = 10
+# The frame around a thumbnail is drawn with rounded corners, so the picture
+# inside it is clipped to the same curve - a square clip left the corners of
+# the image standing outside the frame that was supposed to hold them.
+THUMB_RADIUS = 7
 
 # status -> (theme key, fallback colour).  "todo" is the unvisited state and
 # never gets a dot.
@@ -271,8 +275,11 @@ class FilmStrip(QWidget):
             self._request(name)
             pixmap = self._thumbs.get(os.path.join(self.folder, name))
             target = QRectF(rect)
+            frame = QRectF(rect).adjusted(0.75, 0.75, -0.75, -0.75)
+            rounded = QPainterPath()
+            rounded.addRoundedRect(frame, THUMB_RADIUS, THUMB_RADIUS)
             painter.save()
-            painter.setClipRect(rect)
+            painter.setClipPath(rounded)
             if pixmap:
                 source = QRectF(
                     max(0, (pixmap.width() - rect.width() * 2) / 2.0),
@@ -281,7 +288,7 @@ class FilmStrip(QWidget):
                     min(pixmap.height(), rect.height() * 2))
                 painter.drawPixmap(target, pixmap, source)
             else:
-                painter.fillRect(rect, placeholder)
+                painter.fillPath(rounded, placeholder)
                 painter.setPen(QPen(label_colour))
                 painter.drawText(rect, Qt.AlignmentFlag.AlignCenter,
                                  str(position + 1))
@@ -292,11 +299,10 @@ class FilmStrip(QWidget):
             pen_colour = accent if current else self._status_colour(status)
             painter.setPen(QPen(pen_colour, 2.4 if current else 1.4))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(QRectF(rect).adjusted(0.75, 0.75,
-                                                          -0.75, -0.75), 7, 7)
+            painter.drawRoundedRect(frame, THUMB_RADIUS, THUMB_RADIUS)
 
             if position == self._hover and not current:
-                painter.fillRect(rect, QColor(255, 255, 255, 26))
+                painter.fillPath(rounded, QColor(255, 255, 255, 26))
 
             if status != "todo":
                 dot = QRectF(rect.right() - 12, rect.top() + 5, 7, 7)

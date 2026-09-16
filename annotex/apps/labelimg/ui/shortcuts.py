@@ -61,7 +61,7 @@ ACTIONS = [
     ("redo", "Redo", "Ctrl+Y", "Edit", "redo", ""),
     ("redo_alt", "Redo (alternate)", "Ctrl+Shift+Z", "Edit", "redo", ""),
     ("delete_box", "Delete selected boxes", "Delete", "Edit", "trash", ""),
-    ("duplicate_box", "Duplicate selected boxes", "Ctrl+D", "Edit", "copy", ""),
+    ("duplicate_box", "Duplicate selected boxes", "Ctrl+D", "Edit", "duplicate", ""),
     ("select_all", "Select all boxes", "Ctrl+A", "Edit", "grid", ""),
     ("clear_all", "Clear every box on this image", "Ctrl+Shift+Del", "Edit",
      "clear", "Remove every box from the current image"),
@@ -76,7 +76,7 @@ ACTIONS = [
     ("copy_boxes", "Copy the selected boxes", "Ctrl+C", "Edit", "copy",
      "Copy the selected boxes (all of them when nothing is selected) so they "
      "can be pasted onto another image"),
-    ("cut_boxes", "Cut the selected boxes", "Ctrl+X", "Edit", "copy",
+    ("cut_boxes", "Cut the selected boxes", "Ctrl+X", "Edit", "cut",
      "Copy the selection and remove it from this image"),
     ("paste_boxes", "Paste copied boxes", "Ctrl+V", "Edit", "paste",
      "Paste what was copied onto this image - from another image, or from "
