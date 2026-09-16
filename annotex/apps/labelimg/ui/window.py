@@ -2048,9 +2048,19 @@ class LabelImgWindow(QMainWindow):
         def finished(done):
             if done.id != watched:
                 return
-            self._status(done.message, "good" if done.state == "done" and not done.warnings else "warning")
-            if self.folder:
-                self.reload_folder()
+            # Once, and only while this window is still there: the manager
+            # belongs to the shell and outlives a tool whose tab was closed.
+            try:
+                jobs.jobFinished.disconnect(finished)
+            except (RuntimeError, TypeError):
+                pass
+            try:
+                self._status(done.message, "good" if done.state == "done" and not done.warnings
+                             else "warning")
+                if self.folder:
+                    self.reload_folder()
+            except RuntimeError:
+                pass
 
         jobs.jobFinished.connect(finished)
         jobs.submit(job)

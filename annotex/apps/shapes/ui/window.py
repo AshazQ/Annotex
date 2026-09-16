@@ -1498,7 +1498,18 @@ class ShapesWindow(QMainWindow):
         watched = job.id
 
         def finished(done):
-            if done.id != watched or self.folder != folder:
+            if done.id != watched:
+                return
+            # Once, and never on a window whose tab has been closed since: the
+            # job manager belongs to the shell and outlives the tool.
+            try:
+                jobs.jobFinished.disconnect(finished)
+            except (RuntimeError, TypeError):
+                pass
+            try:
+                if self.folder != folder:
+                    return
+            except RuntimeError:
                 return
             for rel in todo:
                 self._summarise(rel)
