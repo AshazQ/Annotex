@@ -103,13 +103,64 @@ def environment_report() -> str:
     return "\n".join(lines)
 
 
-def _print_missing(problems) -> None:
-    print("%s cannot start.\n" % SUITE_NAME)
-    for problem in problems:
-        print("  - %s" % problem)
-    print("\nThe quickest fix is to run the bootstrap script, which builds a\n"
-          "private environment with everything needed:\n\n"
-          "    python bootstrap.py\n")
+def _has_display() -> bool:
+    """Whether asking Qt for a window will work.
+
+    Worth knowing before asking: without a display Qt does not decline, it
+    ends the process."""
+    if not sys.platform.startswith("linux"):
+        return True
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+                or os.environ.get("QT_QPA_PLATFORM"))
+
+
+# Platforms that draw nowhere anybody is looking.  A modal dialog on one of
+# these waits for a button nobody can press, which turns a message into a
+# hang - and these are exactly the platforms a build server uses.
+HEADLESS_PLATFORMS = ("offscreen", "minimal")
+
+
+def _somebody_is_looking() -> bool:
+    return os.environ.get("QT_QPA_PLATFORM", "") not in HEADLESS_PLATFORMS
+
+
+def alert(title, text) -> bool:
+    """Say something important where there may be no terminal to say it in.
+
+    A packaged build is started by double-clicking an icon: a message
+    printed to a console nobody has is a message nobody gets.  Returns
+    whether a window was actually shown.
+
+    Nothing is shown where nothing can be dismissed.  This is waited on
+    until somebody clicks it, so a build server running the packaged
+    application headless would otherwise stop here for good instead of
+    reporting the problem and exiting."""
+    if not _has_display() or not _somebody_is_looking():
+        return False
+    try:
+        from .ui.dialogs import messages
+        return messages.standalone(title, text)
+    except Exception:
+        return False
+
+
+def _report_problems(problems) -> None:
+    """Everything stopping the program from starting, in every way available."""
+    lines = ["%s cannot start." % SUITE_NAME, ""]
+    lines += ["  - %s" % problem for problem in problems]
+    lines += ["", "The quickest fix is to run the bootstrap script, which builds a",
+              "private environment with everything needed:", "", "    python bootstrap.py"]
+    text = "\n".join(lines)
+    try:
+        print(text)
+    except Exception:                                   # pragma: no cover
+        pass
+    try:
+        from .core import runlog
+        runlog.note(text.replace("\n", "  "), "cannot-start")
+    except Exception:
+        pass
+    alert(SUITE_NAME, text)
 
 
 def run_selftests() -> int:
@@ -276,7 +327,7 @@ def run(argv=None) -> int:
 
     ok, problems = check_environment(require_gui=True)
     if not ok:
-        _print_missing(problems)
+        _report_problems(problems)
         return 2
 
     from .config import ShellSettings
@@ -287,6 +338,16 @@ def run(argv=None) -> int:
 
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
+
+    # Qt's own warnings - a missing image format, a platform plugin that
+    # would not load - go to the log rather than to a stream a packaged
+    # build does not have.  Installed before the application exists, so
+    # nothing it says on the way up is lost.
+    try:
+        from .core import runlog
+        runlog.install_qt_handler()
+    except Exception:
+        pass
 
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -319,7 +380,16 @@ def main(argv=None) -> int:
     except KeyboardInterrupt:
         return 130
     except Exception:
-        path = _write_crash(*sys.exc_info())
-        print("%s could not start. A report was written to:\n  %s" % (SUITE_NAME, path))
-        traceback.print_exc()
+        info = sys.exc_info()
+        path = _write_crash(*info)
+        text = ("%s could not start.\n\n%s: %s\n\nA report was written to:\n%s"
+                % (SUITE_NAME, info[0].__name__, info[1], path))
+        try:
+            print(text)
+            traceback.print_exc()
+        except Exception:                               # pragma: no cover
+            pass
+        # The one failure nobody can be told about in a window they already
+        # have, because there is no window yet.
+        alert(SUITE_NAME, text)
         return 1

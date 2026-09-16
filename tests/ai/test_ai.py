@@ -249,12 +249,19 @@ def main():
     # ── the images around this one are ready before they are asked for ──
     # The encoder is the slow half and does not care which picture it is
     # given, so it should never be idle while somebody is labelling.
-    def settle(assistant, rounds=400):
-        for _ in range(rounds):
+    # Waited on by the clock, not by a count of event loops: spinning
+    # processEvents a fixed number of times finishes in microseconds when
+    # the machine is busy, which is exactly when the work takes longest.
+    def settle(assistant, seconds=60.0):
+        import time as _time
+        deadline = _time.monotonic() + float(seconds)
+        while _time.monotonic() < deadline:
             app.processEvents()
             if not assistant.is_busy() and not assistant._queued:
-                return
+                return True
+            _time.sleep(0.01)
         app.processEvents()
+        return not assistant.is_busy() and not assistant._queued
 
     ahead = os.path.join(SANDBOX, "ahead")
     os.makedirs(ahead, exist_ok=True)
@@ -267,7 +274,7 @@ def main():
     window.open_folder(ahead)
     window.set_tool(BOX_AI)
     assistant = window.ai()
-    settle(assistant)
+    ok("every queued image is finished with", settle(assistant))
     tokens = [assistant.token_for(os.path.join(ahead, "shot_%d.png" % i))
               for i in range(5)]
     ok("the image on screen is ready", assistant.has_image(tokens[0]))

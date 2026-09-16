@@ -25,6 +25,7 @@ SUITES = [("roi core", "roi/test_core.py"),
           ("one keymap", "workspace/test_keymap.py"),
           ("design system", "workspace/test_design.py"),
           ("hostile input", "robust/test_hostile.py"),
+          ("packaged build", "robust/test_frozen.py"),
           ("random operations", "robust/test_monkey.py"),
           ("media gui", "media/test_gui.py"),
           ("shell", "shell/test_shell.py")]

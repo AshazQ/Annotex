@@ -233,6 +233,13 @@ class ShellWindow(QMainWindow):
         self.display_button.setIconSize(QSize(16, 16))
         self.display_button.clicked.connect(self.show_display)
         layout.addWidget(self.display_button)
+        self.help_button = QPushButton("")
+        self.help_button.setObjectName("SuiteTab")
+        self.help_button.setToolTip("Diagnostics  [F1]  ·  what this machine has, and "
+                                    "where the logs are")
+        self.help_button.setIconSize(QSize(16, 16))
+        self.help_button.clicked.connect(self.show_diagnostics)
+        layout.addWidget(self.help_button)
         return bar
 
     def _build_actions(self) -> None:
@@ -245,6 +252,7 @@ class ShellWindow(QMainWindow):
         self._yielding_actions = []
         for text, key, slot in (("Home", "Ctrl+Shift+H", self.go_home),
                                 ("Jobs", "Ctrl+J", self.show_jobs),
+                                ("Diagnostics", "F1", self.show_diagnostics),
                                 ("Close tool", "Ctrl+W", self.close_current_tool)):
             action = QAction(text, self)
             action.setShortcut(QKeySequence(key))
@@ -302,6 +310,7 @@ class ShellWindow(QMainWindow):
             style.set_tool(tab, spec.id)
         self.jobs_button.setIcon(icons.icon("history", theme["sub"], 16))
         self.display_button.setIcon(icons.icon("display", theme["sub"], 16))
+        self.help_button.setIcon(icons.icon("help", theme["sub"], 16))
         self.home.set_theme(theme)
         for page in self.pages.values():
             apply = getattr(page, "tool_apply_theme", None)
@@ -543,6 +552,14 @@ class ShellWindow(QMainWindow):
     def show_style_guide(self) -> None:
         from .style_guide import StyleGuideDialog
         StyleGuideDialog(self, self.theme).exec()
+
+    def show_diagnostics(self) -> None:
+        """What this machine has, and where it writes things down.
+
+        The answers `--check` and `--selftest` give, for somebody who
+        downloaded a built application and has no terminal to ask from."""
+        from .diagnostics import DiagnosticsDialog
+        DiagnosticsDialog(self).exec()
 
     def _measure_screen(self) -> None:
         """Work out what Automatic means on the screen in use, for next start."""

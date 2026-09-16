@@ -69,6 +69,21 @@ try:
                                                                 "Dataset"])
     ok("no tool tabs until a tool is opened", not any(t.isVisible() for t in shell.tool_tabs.values()))
     ok("Home tab checked", shell.home_tab.isChecked())
+
+    # Diagnostics has to be reachable without a terminal: somebody who
+    # downloaded a built application has no other way to ask what this
+    # machine has, or where the log is.
+    ok("the bar offers Diagnostics", shell.help_button.isVisible()
+       and not shell.help_button.icon().isNull())
+    ok("and names its key", "F1" in shell.help_button.toolTip())
+    ok("F1 is bound for the whole application",
+       any(a.shortcut().toString() == "F1" for a in shell.actions()))
+    from annotex.shell.diagnostics import DiagnosticsDialog
+    report = DiagnosticsDialog(shell)
+    app.processEvents()
+    ok("it opens with this machine's report in it",
+       "Annotex" in report.report.toPlainText())
+    report.reject()
     if OUT:
         shell.grab().save(os.path.join(OUT, "shell_home_dark.png"))
 

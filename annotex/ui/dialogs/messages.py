@@ -174,3 +174,36 @@ def warn(parent, title, text, detail="") -> None:
 
 def error(parent, title, text, detail="") -> None:
     MessageSheet(parent, "error", title, text, detail).run()
+
+
+def standalone(title, text, detail="") -> bool:
+    """A message shown when there is no window to hang it on, and perhaps no
+    application either.
+
+    This is the one that has to reach somebody who started a packaged build
+    by double-clicking it and would otherwise watch the icon bounce once and
+    nothing happen.  It runs in the failure paths, before or instead of the
+    shell, so it makes its own application if none exists and it falls back
+    to the platform's own grey box if our sheet cannot be drawn - the point
+    here is that the message arrives, not that it is beautiful.
+
+    Returns whether anything was actually shown."""
+    try:
+        existing = QApplication.instance()
+        app = existing or QApplication([])
+    except Exception:
+        return False
+    try:
+        MessageSheet(None, "error", str(title), str(text), str(detail)).run()
+        return True
+    except Exception:
+        pass
+    try:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(None, str(title), str(text))
+        return True
+    except Exception:
+        return False
+    finally:
+        if existing is None:
+            del app

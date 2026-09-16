@@ -52,8 +52,15 @@ Sorter.
 ## The shell
 
 A slim bar across the top holds **Home**, a tab for each tool you have opened,
-the jobs indicator and **Display**. Tools stay exactly where you left them
-while you move between them.
+the jobs indicator, **Display** and **Diagnostics**. Tools stay exactly where
+you left them while you move between them.
+
+**Diagnostics** (the `?` in the bar, or **F1**) shows what Annotex found on
+this machine - Python, Qt, ffmpeg, whether AI select has a model - alongside
+the recent log, with buttons to copy the lot into a bug report, open the log
+and crash folders, and run every tool's checks again. It is the same report
+as `--check` and the same checks as `--selftest`, for when there is no
+terminal to ask from.
 
 **The image comes first.** In ROI Studio, LabelImg Master and LabelImg Shapes
 the tools sit in a pill-shaped rail down the left, so the image starts at the

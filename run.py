@@ -64,18 +64,55 @@ def _relaunch_in_venv():
 def main():
     if _relaunch_in_venv():
         return 0
-    # A crash inside Qt's C++ code otherwise ends with a bare "Segmentation
-    # fault"; this prints the Python call stack that led to it.
-    import faulthandler
-    faulthandler.enable(all_threads=True)
+    # Before anything else, because everything else might need to say
+    # something: point the output streams at a real file (a windowed build
+    # on Windows has none at all, and printing to one is a crash), and give
+    # the fault handler somewhere a person can find - otherwise a crash
+    # inside Qt's C++ ends as a bare "Segmentation fault" with no trace of
+    # the Python that led to it.
+    try:
+        from annotex.core import runlog
+        runlog.start()
+    except Exception:
+        try:
+            import faulthandler
+            faulthandler.enable(all_threads=True)
+        except Exception:
+            pass
     try:
         from annotex.app import main as app_main
     except Exception as exc:
-        print("Annotex could not load (%s).\n\n"
-              "Run the bootstrap script once to set everything up:\n\n"
-              "    python bootstrap.py\n" % exc)
+        _cannot_load(exc)
         return 2
     return app_main(sys.argv[1:])
+
+
+def _cannot_load(exc):
+    """Say that the program could not start, wherever there is to say it."""
+    message = ("Annotex could not load (%s).\n\n"
+               "Run the bootstrap script once to set everything up:\n\n"
+               "    python bootstrap.py" % exc)
+    try:
+        print(message)
+    except Exception:
+        pass
+    # A packaged build has no terminal, so the message has to be a window -
+    # but only if there is a display to put one on, since asking Qt for a
+    # window without one ends the process rather than returning.
+    try:
+        if sys.platform.startswith("linux") and not (
+                os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            return
+        # A dialog on a platform that draws nowhere waits for a click that
+        # never comes, which would turn this message into a hang.
+        if os.environ.get("QT_QPA_PLATFORM", "") in ("offscreen", "minimal"):
+            return
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        app = QApplication.instance() or QApplication(sys.argv[:1])
+        QMessageBox.critical(None, "Annotex", message)
+        del app
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
