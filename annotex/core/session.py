@@ -71,7 +71,11 @@ class DraftStore:
         }
         if extra:
             payload["extra"] = dict(extra)
-        fingerprint = (json.dumps(payload["shapes"], sort_keys=True)
+        # The image is part of it: the same shapes pasted onto the next image
+        # are a new draft, not the old one, or recovery restores them to the
+        # image they came from.
+        fingerprint = (payload["image_name"] + "\x00"
+                       + json.dumps(payload["shapes"], sort_keys=True)
                        + payload["comment"]
                        + json.dumps(payload.get("extra", {}), sort_keys=True))
         if not force and fingerprint == self._last_payload:

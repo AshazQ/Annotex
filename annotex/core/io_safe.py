@@ -259,6 +259,8 @@ def _pid_alive(pid) -> bool:
             return False
         os.kill(int(pid), 0)
         return True
+    except PermissionError:
+        return True                              # alive, but someone else's
     except (OSError, ProcessLookupError, ValueError, TypeError):
         return False
     except Exception:

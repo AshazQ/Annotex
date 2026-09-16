@@ -1458,18 +1458,27 @@ def _apply_renames(plan, history, ctx, warnings, noun):
                 placed.append(action)
             finished += len(members)
         except OSError as exc:
+            # Back to the old name - unless another pair has taken it by now,
+            # which renumbering does all the time.  os.rename would replace
+            # that file without a word on Linux and macOS, so the file waits
+            # under its unique temporary name instead, and undo still knows
+            # where it is.
+            temporaries = dict((id(a), t) for a, t in members)
             for action in reversed(placed):
+                back = action.source if not os.path.lexists(action.source) \
+                    else temporaries[id(action)]
                 try:
-                    os.rename(action.target, action.source)
-                    history.step("rename", action.target, action.source)
+                    history.step("rename", action.target, back)
+                    os.rename(action.target, back)
                 except OSError:
                     pass
             for action, temporary in members:
-                if action in placed or not os.path.lexists(temporary):
+                if action in placed or not os.path.lexists(temporary) \
+                        or os.path.lexists(action.source):
                     continue
                 try:
-                    os.rename(temporary, action.source)
                     history.step("rename", temporary, action.source)
+                    os.rename(temporary, action.source)
                 except OSError:
                     pass
             _warn(ctx, warnings, "%s kept its old name - it could not be renamed (%s)."

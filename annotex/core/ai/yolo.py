@@ -324,7 +324,9 @@ def nms(boxes, scores, classes, threshold=0.45):
     import numpy as np
     if not len(scores):
         return np.zeros(0, dtype=int)
-    shifted = boxes + (classes[:, None].astype(np.float32) * 1e6)   # classes never overlap
+    # Classes never overlap.  In float64: float32 cannot hold a pixel's worth
+    # of detail once a class id times a million is added to it.
+    shifted = np.asarray(boxes, dtype=np.float64) + (classes[:, None].astype(np.float64) * 1e6)
     x0, y0, x1, y1 = shifted[:, 0], shifted[:, 1], shifted[:, 2], shifted[:, 3]
     areas = np.maximum(0.0, x1 - x0) * np.maximum(0.0, y1 - y0)
     order = scores.argsort()[::-1]

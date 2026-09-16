@@ -217,5 +217,10 @@ def categorise(prediction, threshold=0.5, multiple="top", mapping=None):
         return [EMPTY], "nothing above %.2f" % threshold
     detail = ", ".join("%s %.2f" % (l, c) for c, l in found)
     if multiple == "all":
-        return [folder(l) for _c, l in found], detail
+        # Two classes may share a folder; the image goes there once.
+        folders = []
+        for _c, l in found:
+            if folder(l) not in folders:
+                folders.append(folder(l))
+        return folders, detail
     return [folder(found[0][1])], detail

@@ -83,7 +83,8 @@ def read_references(folder):
         elif os.path.isfile(path):
             loose.append(path)
     if loose:
-        images = [p for p in scan_images(folder, recursive=False) if p in set(loose)]
+        wanted = set(loose)
+        images = [p for p in scan_images(folder, recursive=False) if p in wanted]
         if images:
             own = safe_folder_name(os.path.basename(folder.rstrip(os.sep)) or "reference")
             categories.setdefault(own, []).extend(images)

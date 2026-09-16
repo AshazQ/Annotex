@@ -540,8 +540,9 @@ class DatasetPage(MediaToolPage):
 
     # ── history ───────────────────────────────────────────
     def refresh_history(self) -> None:
-        current = self.history.currentItem()
-        keep = current.data(Qt.ItemDataRole.UserRole)["run"] if current is not None else ""
+        # The "nothing has been run" line carries no record.
+        current = self._selected_run()
+        keep = current.get("run", "") if isinstance(current, dict) else ""
         self.history.clear()
         folder = self.folder() if self.only_this.isChecked() else None
         try:
@@ -570,7 +571,8 @@ class DatasetPage(MediaToolPage):
 
     def _selected_run(self):
         item = self.history.currentItem()
-        return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        record = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        return record if isinstance(record, dict) else None
 
     def _sync_undo(self) -> None:
         run = self._selected_run()

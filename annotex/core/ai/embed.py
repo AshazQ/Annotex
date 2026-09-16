@@ -305,8 +305,12 @@ class OnnxEmbedder(Embedder):
         return best.reshape(-1)
 
     def vector(self, path):
+        # Reading the picture stays outside: an unreadable image is that
+        # image's problem, and embed_paths lists it and carries on, whereas
+        # EmbedUnavailable says the model itself cannot be used and stops.
+        tensor = self._tensor(path)
         try:
-            outputs = self.session.run(None, {self.input_name: self._tensor(path)})
+            outputs = self.session.run(None, {self.input_name: tensor})
         except Exception as exc:
             raise EmbedUnavailable("The model could not read that image: %s" % exc)
         vector = unit(self._pool(outputs))

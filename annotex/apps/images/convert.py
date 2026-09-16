@@ -71,11 +71,13 @@ def plan(items, options, output_root=""):
                               number, os.path.basename(os.path.dirname(source)), ext[1:])
         destination = os.path.join(folder, name + ext)
         stem, counter = destination[:-len(ext)], 2
-        while destination in taken or os.path.exists(destination) or \
+        # Compared without case: on Windows and macOS "Photo.jpg" and
+        # "photo.jpg" are one file, and the second would replace the first.
+        while destination.lower() in taken or os.path.exists(destination) or \
                 os.path.abspath(destination) == os.path.abspath(source):
             destination = "%s_%d%s" % (stem, counter, ext)
             counter += 1
-        taken.add(destination)
+        taken.add(destination.lower())
         planned.append((source, destination))
     return planned
 
