@@ -120,11 +120,17 @@ def write_preview(src_path, dest_path, shapes, colour="#00dc64",
                     drw.text((cx, cy), text, fill=label_rgb + (255,), font=font)
 
         merged = Image.alpha_composite(base, overlay).convert("RGB")
+        # Saved in the format its name says: the preview keeps the original's
+        # name, and a .webp or .bmp holding PNG bytes confuses what opens it.
         ext = os.path.splitext(dest_path)[1].lower()
-        if ext in (".jpg", ".jpeg"):
+        pil_format = Image.registered_extensions().get(ext, "PNG")
+        if pil_format == "JPEG":
             merged.save(tmp, format="JPEG", quality=92)
         else:
-            merged.save(tmp, format="PNG")
+            try:
+                merged.save(tmp, format=pil_format)
+            except (OSError, KeyError, ValueError):
+                merged.save(tmp, format="PNG")
 
     def verify(tmp):
         with Image.open(tmp) as im:

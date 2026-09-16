@@ -120,7 +120,10 @@ class YoloReader:
         try:
             with codecs.open(self.class_list_path, 'r', encoding=ENCODE_METHOD,
                              errors='replace') as classes_file:
-                self.classes = classes_file.read().strip('\n').split('\n')
+                # Line by line, so a classes.txt saved on Windows does not
+                # give every class a trailing carriage return.
+                self.classes = [line.strip() for line in
+                                classes_file.read().strip('\r\n').splitlines()]
         except (IOError, OSError):
             self.classes = []
 
@@ -164,7 +167,8 @@ class YoloReader:
                 if not bndBox:
                     continue
                 try:
-                    class_index, x_center, y_center, w, h = bndBox.split(' ')
+                    # Any whitespace: other tools write tabs or double spaces.
+                    class_index, x_center, y_center, w, h = bndBox.split()
                     label, x_min, y_min, x_max, y_max = self.yolo_line_to_shape(
                         class_index, x_center, y_center, w, h)
                     self.add_shape(label, x_min, y_min, x_max, y_max, False)

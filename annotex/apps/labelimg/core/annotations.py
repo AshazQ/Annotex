@@ -509,7 +509,8 @@ class AnnotationFolder:
             return cached[1]
         try:
             with codecs.open(path, "r", "utf-8", errors="replace") as handle:
-                names = handle.read().strip("\n").split("\n")
+                names = [line.strip() for line in
+                         handle.read().strip("\r\n").splitlines()]
         except OSError:
             names = []
         self._classes_cache[directory] = (mtime, names)

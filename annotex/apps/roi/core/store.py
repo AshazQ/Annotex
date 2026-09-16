@@ -138,6 +138,7 @@ class AnnotationStore:
         self.json_path = ""
         self.map_path = ""
         self.stamp = None            # mtime of the spreadsheet we last saw
+        self.fallback_path = ""      # where saves go while the spreadsheet is locked
 
     # ── setup ─────────────────────────────────────────────
     def bind(self, folder) -> None:
@@ -145,6 +146,7 @@ class AnnotationStore:
         self.xlsx_path = os.path.join(self.folder, XLSX_NAME)
         self.json_path = os.path.join(self.folder, JSON_NAME)
         self.map_path = os.path.join(self.folder, MAP_NAME)
+        self.fallback_path = ""
         self.rows = []
 
     # ── canonical row construction ────────────────────────
@@ -209,7 +211,8 @@ class AnnotationStore:
         count = len(geo.parse_multi_polys(row["pixel_coords"]
                                           or row["normalized_coords"]))
         try:
-            row["total_polygons"] = int(float(row["total_polygons"] or 0))
+            row["total_polygons"] = int(float(row["total_polygons"])) \
+                if row["total_polygons"] != "" else count
         except (TypeError, ValueError):
             row["total_polygons"] = count
         for key in ("image_width", "image_height"):
@@ -482,14 +485,18 @@ class AnnotationStore:
         ok, err = atomic_write(self.xlsx_path, write, verify)
         if ok:
             report.written.append(self.xlsx_path)
+            self.fallback_path = ""
             self.touch_stamp()
             return
         # The usual cause is the file being open in Excel; keep the work by
-        # writing a timestamped sibling rather than losing the save.
-        fallback = timestamped_sibling(self.xlsx_path)
+        # writing a timestamped sibling rather than losing the save.  The
+        # spreadsheet itself stays the target - every save tries it first, so
+        # the work lands back in it once Excel lets go - and while it stays
+        # locked the same sibling is reused rather than a new one per save.
+        fallback = self.fallback_path or timestamped_sibling(self.xlsx_path)
         ok2, err2 = atomic_write(fallback, write, verify, keep_backup=False)
         if ok2:
-            self.xlsx_path = fallback
+            self.fallback_path = fallback
             report.warnings.append("%s locked, wrote %s"
                                    % (XLSX_NAME, os.path.basename(fallback)))
             report.written.append(fallback)

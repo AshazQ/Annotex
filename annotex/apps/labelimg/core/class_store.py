@@ -508,13 +508,21 @@ class ClassStore(object):
             print('Could not read class store (%s); starting fresh.' % error)
             return False
 
-        projects = payload.get('projects') or {}
-        if not projects:
+        projects = payload.get('projects') if isinstance(payload, dict) else None
+        if not isinstance(projects, dict) or not projects:
             return False
         self.projects = {}
         for name, data in projects.items():
+            if not isinstance(data, dict):
+                continue
             data.setdefault('name', name)
-            self.projects[name] = ClassProject.from_dict(data)
+            try:
+                self.projects[name] = ClassProject.from_dict(data)
+            except (KeyError, TypeError, ValueError):
+                continue                # one damaged project, not all of them
+        if not self.projects:
+            self.ensure_project(DEFAULT_PROJECT_NAME)
+            return False
         active = payload.get('active_project')
         if active not in self.projects:
             active = self.project_names()[0]
@@ -586,9 +594,8 @@ def _file_references_class(path, class_name, class_id):
                 body = handle.read()
             return '<name>%s</name>' % class_name in body
         if extension == '.json':
-            with codecs.open(path, 'r', 'utf8', errors='ignore') as handle:
-                body = handle.read()
-            return '"%s"' % class_name in body
+            return any(annotation.get('label') == class_name
+                       for annotation in _createml_annotations(path))
         if extension == '.txt':
             if class_id is None:
                 return False
@@ -636,16 +643,46 @@ def rename_class_in_annotations(search_dirs, old_name, new_name):
                 continue
             if extension == '.xml':
                 needle = '<name>%s</name>' % old_name
-                replacement = '<name>%s</name>' % new_name
+                if needle not in body:
+                    continue
+                body = body.replace(needle, '<name>%s</name>' % new_name)
             else:
-                needle = '"%s"' % old_name
-                replacement = '"%s"' % new_name
-            if needle not in body:
-                continue
+                # Only the labels change.  A plain text replace of "old" would
+                # also rename a JSON key when a class is called image, label,
+                # x or width - and the file would no longer be CreateML.
+                try:
+                    data = json.loads(body)
+                except ValueError:
+                    continue
+                touched = False
+                for annotation in _createml_annotations(data=data):
+                    if annotation.get('label') == old_name:
+                        annotation['label'] = new_name
+                        touched = True
+                if not touched:
+                    continue
+                body = json.dumps(data)
             try:
                 with codecs.open(full, 'w', 'utf8') as handle:
-                    handle.write(body.replace(needle, replacement))
+                    handle.write(body)
                 changed.append(full)
             except Exception:
                 continue
     return changed
+
+
+def _createml_annotations(path=None, data=None):
+    """Every annotation dict in a CreateML file, or none if it is not one."""
+    if data is None:
+        try:
+            with codecs.open(path, 'r', 'utf8', errors='ignore') as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return []
+    if not isinstance(data, list):
+        return []
+    found = []
+    for entry in data:
+        if isinstance(entry, dict) and isinstance(entry.get('annotations'), list):
+            found.extend(a for a in entry['annotations'] if isinstance(a, dict))
+    return found

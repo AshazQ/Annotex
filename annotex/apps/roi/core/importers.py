@@ -225,18 +225,25 @@ def _resolve(name, polysets, strategy):
 
     # union: concatenate every distinct polygon, in file order
     base = dict(polysets[0][1])
-    merged, kinds = [], []
-    for _i, row, polys in polysets:
-        row_kinds = geo.parse_shape_types(row.get("shape_types", ""), len(polys))
-        for j, poly in enumerate(polys):
-            if poly not in merged:
-                merged.append(poly)
-                kinds.append(row_kinds[j] if j < len(row_kinds) else "polygon")
-
     width = max((int(r.get("image_width") or 0) for _i, r, _p in polysets), default=0)
     height = max((int(r.get("image_height") or 0) for _i, r, _p in polysets), default=0)
     pixel_source = any(geo.parse_multi_polys(r.get("pixel_coords", ""))
                        for _i, r, _p in polysets)
+    merged, kinds = [], []
+    for _i, row, polys in polysets:
+        row_kinds = geo.parse_shape_types(row.get("shape_types", ""), len(polys))
+        if pixel_source and not geo.parse_multi_polys(row.get("pixel_coords", "")):
+            # This file only knows 0-1 coordinates (a JSON export, say) while
+            # another gives pixels: bring them onto one scale, or they would
+            # be pixels squeezed into the top-left corner.
+            if not (width and height):
+                continue
+            polys = [list(p) for p in geo.norm_to_polys(polys, width, height)]
+        for j, poly in enumerate(polys):
+            poly = [tuple(p) for p in poly]
+            if poly not in merged:
+                merged.append(poly)
+                kinds.append(row_kinds[j] if j < len(row_kinds) else "polygon")
 
     base["total_polygons"] = len(merged)
     base["shape_types"] = geo.fmt_shape_types(kinds)
