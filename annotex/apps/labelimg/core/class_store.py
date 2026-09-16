@@ -671,6 +671,54 @@ def rename_class_in_annotations(search_dirs, old_name, new_name):
     return changed
 
 
+def reassign_class_id_in_yolo(search_dirs, old_id, new_id):
+    """Move every YOLO box of class `old_id` to `new_id`.
+
+    YOLO .txt files hold the class ID, not its name, so renaming leaves them
+    alone - but a class deleted with its boxes reassigned has to be rewritten
+    here, or those boxes point at an ID that no longer names anything.
+    Returns the list of files that were modified."""
+    old_id, new_id = int(old_id), int(new_id)
+    changed = []
+    seen_dirs = set()
+    for directory in search_dirs:
+        if not directory:
+            continue
+        directory = os.path.abspath(directory)
+        if directory in seen_dirs or not os.path.isdir(directory):
+            continue
+        seen_dirs.add(directory)
+        for entry in sorted(os.listdir(directory)):
+            if not entry.lower().endswith('.txt') or entry.lower() == 'classes.txt':
+                continue
+            full = os.path.join(directory, entry)
+            if not os.path.isfile(full):
+                continue
+            try:
+                with codecs.open(full, 'r', 'utf8') as handle:
+                    lines = handle.read().splitlines()
+            except Exception:
+                continue
+            touched = False
+            out = []
+            for line in lines:
+                parts = line.split()
+                if len(parts) == 5 and parts[0].isdigit() and int(parts[0]) == old_id:
+                    parts[0] = str(new_id)
+                    line = ' '.join(parts)
+                    touched = True
+                out.append(line)
+            if not touched:
+                continue
+            try:
+                with codecs.open(full, 'w', 'utf8') as handle:
+                    handle.write('\n'.join(out) + '\n')
+                changed.append(full)
+            except Exception:
+                continue
+    return changed
+
+
 def _createml_annotations(path=None, data=None):
     """Every annotation dict in a CreateML file, or none if it is not one."""
     if data is None:

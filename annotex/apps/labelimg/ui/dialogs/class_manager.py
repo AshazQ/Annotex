@@ -96,6 +96,7 @@ class ClassManagerDialog(Dialog):
         self.search_dirs = list(search_dirs or [])
         self.renames = []
         self.reassignments = []
+        self.reassigned_ids = []         # (old id, new id), for YOLO files
         self.changed = False
         self._build()
         self._reload_projects()
@@ -456,6 +457,7 @@ class ClassManagerDialog(Dialog):
             if target is None:
                 return
             self.reassignments.append((entry.name, target.name))
+            self.reassigned_ids.append((entry.id, target.id))
             project.remove_class(entry.id)
             self.changed = True
             self._refresh_table()

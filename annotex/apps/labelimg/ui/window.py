@@ -51,7 +51,7 @@ from ..core import report as reporting
 from ..core.annotations import (AnnotationFolder, apply_boxes, copy_to_copies,
                                 move_to_deleted, scan_images)
 from ..core.class_store import (ClassStore, color_for_name,
-                                rename_class_in_annotations)
+                                reassign_class_id_in_yolo, rename_class_in_annotations)
 from ..core.model import Box, boxes_match, find_duplicates
 from . import shortcuts as sc
 from .canvas import T_AI, T_BOX, T_PAN, T_SELECT, BoxCanvas
@@ -1029,6 +1029,10 @@ class LabelImgWindow(QMainWindow):
         if accepted:
             for old, new in dialog.renames + dialog.reassignments:
                 self.apply_class_rename(old, new)
+            # YOLO files name a class by its ID, which a rename leaves as it
+            # is - but a reassigned class's ID is gone, so its boxes move.
+            for old_id, new_id in getattr(dialog, "reassigned_ids", []):
+                reassign_class_id_in_yolo(self.annotation_dirs(), old_id, new_id)
             self.class_store.save()
             self.settings.set("class_project", self.class_store.active_project_name)
         else:

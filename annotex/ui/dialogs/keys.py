@@ -86,15 +86,24 @@ class KeyBindingsEditor(QWidget):
             return
         self.assign(action_id, dialog.value(), ask=True)
 
+    @staticmethod
+    def _same_key(a, b) -> bool:
+        """Two spellings of one key - Del and Delete, Shift+Ctrl and Ctrl+Shift -
+        are the same key, and only one command can have it."""
+        if not a or not b:
+            return False
+        fmt = QKeySequence.SequenceFormat.PortableText
+        return QKeySequence(a).toString(fmt) == QKeySequence(b).toString(fmt)
+
     def assign(self, action_id, chosen, ask=False) -> bool:
-        if chosen and chosen in self.reserved:
+        if chosen and any(self._same_key(chosen, key) for key in self.reserved):
             if ask:
                 messages.inform(self, "Reserved key",
                                         "%s is used by the canvas itself."
                                         % chosen)
             return False
         for other_id, key in self.keys.items():
-            if other_id != action_id and key and key == chosen:
+            if other_id != action_id and self._same_key(key, chosen):
                 if ask:
                     answer = messages.ask(
                         self, "Already used",
