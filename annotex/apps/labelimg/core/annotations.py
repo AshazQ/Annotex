@@ -449,6 +449,14 @@ class AnnotationFolder:
             return report
 
         report.written.append(path)
+        # Only Pascal VOC has somewhere to put "difficult".  Saying so beats
+        # letting the mark disappear between one save and the next reload.
+        if fmt != FORMAT_VOC:
+            dropped = sum(1 for box in boxes if box.difficult)
+            if dropped:
+                report.warnings.append(
+                    "%d box(es) marked difficult - %s cannot record that, so the "
+                    "mark is not in the file" % (dropped, fmt))
         self._seen.add(rel)
         self._stamp(rel, path)
         self._retire_other_formats(rel, fmt, directory, report)
@@ -639,7 +647,9 @@ def copy_to_copies(folder_io, rel):
         return False, "could not create %s" % COPY_DIR
     source = folder_io.image_path(rel)
     try:
-        destination = os.path.join(target, os.path.basename(source))
+        # Two images in different sub-folders can share a name, and the copy
+        # folder is flat - so the second must not land on top of the first.
+        destination = _unique_destination(target, os.path.basename(source))
         shutil.copy2(source, destination)
         return True, destination
     except OSError as exc:

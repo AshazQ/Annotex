@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,18 @@ from pathlib import Path
 from ..config import SUITE_VERSION
 
 MIN_FREE_BYTES = 8 * 1024 * 1024
+
+
+def _read_umask() -> int:
+    """The process umask.  Read once, here, because reading it means setting
+    it for a moment - and by the time jobs are running there are other threads
+    that could create a file in that moment."""
+    value = os.umask(0)
+    os.umask(value)
+    return value
+
+
+_UMASK = _read_umask()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -76,6 +89,27 @@ def rotate_backup(path, keep: int = 1, target=None) -> None:
         pass
 
 
+def inherit_mode(destination, tmp) -> None:
+    """Give the replacement the permissions the file already had.
+
+    mkstemp creates its file readable by its owner alone, and os.replace
+    carries that onto the destination - so without this, saving would quietly
+    lock a shared annotation folder down to one person, and every export would
+    come out unreadable to a training job running as anyone else.  A file that
+    is new gets what any other program would have created.  Windows does not
+    use these bits, so nothing happens there."""
+    if os.name == "nt":
+        return
+    try:
+        mode = stat.S_IMODE(os.stat(destination).st_mode)
+    except OSError:
+        mode = 0o666 & ~_UMASK
+    try:
+        os.chmod(tmp, mode)
+    except OSError:
+        pass
+
+
 def timestamped_sibling(path) -> str:
     """<folder>/roi_annotations.xlsx -> <folder>/roi_annotations_20260817_143000.xlsx"""
     root, ext = os.path.splitext(str(path))
@@ -130,6 +164,7 @@ def atomic_write(path, write_fn, verify_fn=None, keep_backup: bool = True,
             verify_fn(tmp)                     # raises if the file is bad
         if keep_backup:
             rotate_backup(path, target=backup_to)
+        inherit_mode(path, tmp)
         os.replace(tmp, path)
         tmp = None
         return True, ""

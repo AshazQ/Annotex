@@ -2,10 +2,15 @@
 # -*- coding: utf8 -*-
 """CreateML reader and writer - LabelImg's own, unchanged in what it emits.
 
-One fix in the reader: CreateML has no notion of a "difficult" box, but the
-old reader marked every box it loaded as difficult, which then leaked into a
-VOC file if the image was re-saved in that format.  Loaded boxes are now
-plain boxes.
+Two fixes in the reader:
+
+* CreateML has no notion of a "difficult" box, but the old reader marked
+  every box it loaded as difficult, which then leaked into a VOC file if the
+  image was re-saved in that format.  Loaded boxes are now plain boxes.
+* `verified` was seeded from the first image in the file before looking for
+  the one being read.  A CreateML file describes a whole folder, so an image
+  the file does not mention inherited a different image's verified mark.  It
+  is now read only from the entry for this image.
 """
 import json
 import os
@@ -119,14 +124,11 @@ class CreateMLReader:
         # Returns a list
         output_list = json.loads(input_data)
 
-        if output_list:
-            self.verified = output_list[0].get("verified", False)
-
         if len(self.shapes) > 0:
             self.shapes = []
         for image in output_list:
             if image["image"] == self.filename:
-                self.verified = image.get("verified", self.verified)
+                self.verified = image.get("verified", False)
                 for shape in image["annotations"]:
                     self.add_shape(shape["label"], shape["coordinates"])
 

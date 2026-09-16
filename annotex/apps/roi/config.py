@@ -34,8 +34,10 @@ PRINTED_DIR = "printed_roi"
 OUTPUT_DIRS = (NO_ROI_DIR, PRINTED_DIR)
 
 # ── image support ─────────────────────────────────────────────
-IMG_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".ppm", ".pgm",
-            ".webp", ".tif", ".tiff")
+# The same list the labelling tools read, so one folder holds the same
+# number of images whichever tool opens it.
+IMG_EXTS = (".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".gif", ".ppm", ".pgm",
+            ".pbm", ".webp", ".tif", ".tiff")
 
 # ── geometry rules ────────────────────────────────────────────
 MIN_POINTS = 3
