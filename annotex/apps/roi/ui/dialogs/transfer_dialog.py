@@ -48,6 +48,7 @@ class ExportDialog(Dialog):
             QAbstractItemView.SelectionMode.MultiSelection)
         self.picker.setMaximumHeight(190)
         self.picker.setVisible(False)
+        self.picker.itemSelectionChanged.connect(self._update_summary)
         inner2.addWidget(self.picker)
 
         self.summary = hint("")
@@ -72,7 +73,6 @@ class ExportDialog(Dialog):
         for value in values:
             self.picker.addItem(QListWidgetItem(value))
         self._update_summary()
-        self.picker.itemSelectionChanged.connect(self._update_summary)
 
     def _selected_rows(self):
         mode = self.scope.currentData()

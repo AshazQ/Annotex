@@ -88,6 +88,9 @@ DEFAULT_SETTINGS = {
     # Workspace: what is folded away for a bigger image.
     "side_collapsed": False,
     "filmstrip_folded": False,
+    # Run on its own, the window's size and place; a key not listed here is
+    # not loaded back, so without it the window never came back where it was.
+    "window_geometry": "",
     # Auto-labelling with your own YOLO detector.
     "yolo_model": "",
     "yolo_names": "",                # optional class names file
