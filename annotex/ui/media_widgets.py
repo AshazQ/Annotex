@@ -17,7 +17,7 @@ from . import design
 from ..core.media.ffmpeg import format_time
 from . import icons
 from .palette import qcolor
-from .widgets import section_label
+from .widgets import FlowRow, section_label
 
 
 class FitLabel(QLabel):
@@ -95,15 +95,15 @@ class FileList(QWidget):
         self.hint.setObjectName("Hint")
         layout.addWidget(self.hint)
 
-        buttons = QHBoxLayout()
-        buttons.setSpacing(design.SPACE["s"])
+        # Wrapping, not one long line: otherwise this row alone decides how
+        # wide the pane must be, and the options beside it get what is left.
+        buttons = FlowRow(design.SPACE["s"])
         self.add_files_button = QPushButton("Add files…")
         self.add_files_button.clicked.connect(self.browse_files)
         self.add_folder_button = QPushButton("Add folder…")
         self.add_folder_button.clicked.connect(self.browse_folder)
-        buttons.addWidget(self.add_files_button)
-        buttons.addWidget(self.add_folder_button)
-        buttons.addStretch(1)
+        buttons.add(self.add_files_button)
+        buttons.add(self.add_folder_button)
         self.up_button = self.down_button = None
         if reorderable:
             self.up_button = QPushButton("↑")
@@ -112,15 +112,15 @@ class FileList(QWidget):
             self.down_button = QPushButton("↓")
             self.down_button.setToolTip("Move down")
             self.down_button.clicked.connect(lambda: self.move(1))
-            buttons.addWidget(self.up_button)
-            buttons.addWidget(self.down_button)
+            buttons.add(self.up_button)
+            buttons.add(self.down_button)
         remove = QPushButton("Remove")
         remove.clicked.connect(self.remove_selected)
         clear = QPushButton("Clear")
         clear.clicked.connect(self.clear)
-        buttons.addWidget(remove)
-        buttons.addWidget(clear)
-        layout.addLayout(buttons)
+        buttons.add(remove)
+        buttons.add(clear)
+        layout.addWidget(buttons)
         self._sync()
 
     # ── content ───────────────────────────────────────────
@@ -510,8 +510,7 @@ class VideoPlayer(QWidget):
         self.timeline.seekRequested.connect(self.seek)
         layout.addWidget(self.timeline)
 
-        controls = QHBoxLayout()
-        controls.setSpacing(4)
+        controls = FlowRow(4)
         self.buttons = {}
         for key, text, tip, slot in (
                 ("back_second", "−1s", "Back one second  [Shift+←]", lambda: self.step_seconds(-1)),
@@ -524,12 +523,11 @@ class VideoPlayer(QWidget):
             button.clicked.connect(slot)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.buttons[key] = button
-            controls.addWidget(button)
-        controls.addStretch(1)
+            controls.add(button)
         self.time_label = QLabel("--:--:--.--- / --:--:--.---")
         self.time_label.setObjectName("Mono")
-        controls.addWidget(self.time_label)
-        layout.addLayout(controls)
+        controls.add(self.time_label)
+        layout.addWidget(controls)
 
         self.decoder = _Decoder(self)
         self.decoder.frameReady.connect(self._decoded)

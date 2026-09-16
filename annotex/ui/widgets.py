@@ -7,10 +7,10 @@ palette) live with their tools.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
-from PySide6.QtWidgets import (QFrame, QGridLayout, QLabel, QPlainTextEdit,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFrame, QGridLayout, QLabel, QLayout, QPlainTextEdit,
+                               QSizePolicy, QVBoxLayout, QWidget)
 
 from . import style
 from . import design
@@ -21,6 +21,102 @@ def section_label(text: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName("SectionHeader")
     return label
+
+
+class FlowLayout(QLayout):
+    """A row that wraps onto the next line when it runs out of room.
+
+    A row of buttons in a QHBoxLayout makes whatever holds it as wide as every
+    button laid end to end.  In a splitter that is a floor no one can see: the
+    pane keeps its width and the pane beside it is squeezed to nothing.  This
+    one is only ever as wide as its widest single item, and takes a second
+    line when it needs one."""
+
+    def __init__(self, parent=None, spacing=6):
+        super().__init__(parent)
+        self._items = []
+        self.setSpacing(spacing)
+        self.setContentsMargins(0, 0, 0, 0)
+
+    # QLayout wants all five of these.
+    def addItem(self, item) -> None:
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    # ── wrapping ──────────────────────────────────────────
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width) -> int:
+        return self._arrange(QRect(0, 0, width, 0), place=False)
+
+    def setGeometry(self, rect) -> None:
+        super().setGeometry(rect)
+        self._arrange(rect, place=True)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(),
+                            margins.top() + margins.bottom())
+
+    def _arrange(self, rect, place) -> int:
+        margins = self.contentsMargins()
+        left = rect.x() + margins.left()
+        right = rect.right() - margins.right()
+        x, y, line = left, rect.y() + margins.top(), 0
+        gap = self.spacing()
+        for item in self._items:
+            hint = item.sizeHint()
+            if line and x + hint.width() > right:
+                x, y, line = left, y + line + gap, 0
+            if place:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + gap
+            line = max(line, hint.height())
+        return y + line - rect.y() + margins.bottom()
+
+
+class FlowRow(QWidget):
+    """A widget holding a FlowLayout, so it can go straight into a column."""
+
+    def __init__(self, spacing=None, parent=None):
+        super().__init__(parent)
+        self.flow = FlowLayout(self, design.SPACE["s"] if spacing is None else spacing)
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def add(self, widget) -> None:
+        self.flow.addWidget(widget)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width) -> int:
+        return self.flow.heightForWidth(width)
+
+    def sizeHint(self) -> QSize:
+        return self.flow.sizeHint()
+
+    def minimumSizeHint(self) -> QSize:
+        return self.flow.minimumSize()
 
 
 def divider() -> QFrame:

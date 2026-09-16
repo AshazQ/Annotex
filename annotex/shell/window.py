@@ -19,8 +19,8 @@ import os
 from PySide6.QtCore import QByteArray, QProcess, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame, QHBoxLayout,
-                               QLabel, QMainWindow, QPushButton, QStackedWidget,
-                               QVBoxLayout, QWidget)
+                               QLabel, QMainWindow, QPushButton, QScrollArea, QStackedWidget,
+                               QStyle, QStyleOptionButton, QStylePainter, QVBoxLayout, QWidget)
 
 from ..ui import style
 from ..ui import design
@@ -41,6 +41,47 @@ class JobsDialog(Dialog):
                          width=720, height=520)
         self.body.addWidget(JobQueuePanel(manager, None), 1)
         self.add_close_button()
+
+
+class ToolTab(QPushButton):
+    """A tool's tab in the top bar.
+
+    A plain button squeezed narrower than its text shows the middle of the
+    word and no ellipsis, so with several tools open "LabelImg Master" and
+    "LabelImg Shapes" both read as "belImg".  This one cuts the name properly
+    and keeps enough room to be worth reading; the strip it sits in scrolls
+    once even that no longer fits."""
+
+    TEXT_ROOM = 62                       # px kept for the name before scrolling
+
+    def __init__(self, text):
+        super().__init__(text)
+        self._full = text
+
+    def setText(self, text) -> None:
+        self._full = text
+        super().setText(text)
+
+    def full_text(self) -> str:
+        return self._full
+
+    def _text_room(self, width) -> int:
+        room = width - 22
+        if not self.icon().isNull():
+            room -= self.iconSize().width() + 6
+        return max(0, room)
+
+    def minimumSizeHint(self) -> QSize:
+        hint = super().minimumSizeHint()
+        icon = self.iconSize().width() + 6 if not self.icon().isNull() else 0
+        return QSize(min(hint.width(), self.TEXT_ROOM + icon + 22), hint.height())
+
+    def paintEvent(self, _event) -> None:
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.text = self.fontMetrics().elidedText(
+            self._full, Qt.TextElideMode.ElideRight, self._text_room(option.rect.width()))
+        QStylePainter(self).drawControl(QStyle.ControlElement.CE_PushButton, option)
 
 
 class ShellWindow(QMainWindow):
@@ -114,6 +155,38 @@ class ShellWindow(QMainWindow):
         self.tab_group.addButton(self.home_tab)
         layout.addWidget(self.home_tab)
 
+        # The tabs live in a strip that scrolls, so opening every tool can
+        # never push one out of reach or squeeze the names to nothing.
+        self.tab_back = QPushButton("‹")
+        self.tab_back.setObjectName("SuiteTabScroll")
+        self.tab_back.setToolTip("Earlier tools")
+        self.tab_back.setFixedWidth(22)
+        self.tab_back.clicked.connect(lambda: self._scroll_tabs(-140))
+        self.tab_back.setVisible(False)
+        layout.addWidget(self.tab_back)
+
+        self.tab_scroll = QScrollArea()
+        self.tab_scroll.setObjectName("SuiteTabStrip")
+        self.tab_scroll.setWidgetResizable(True)
+        self.tab_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.tab_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tab_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        strip = QWidget()
+        strip.setObjectName("SuiteTabHolder")
+        strip_layout = QHBoxLayout(strip)
+        design.margins(strip_layout, "0")
+        strip_layout.setSpacing(4)
+        self.tab_scroll.setWidget(strip)
+        layout.addWidget(self.tab_scroll, 1)
+
+        self.tab_forward = QPushButton("›")
+        self.tab_forward.setObjectName("SuiteTabScroll")
+        self.tab_forward.setToolTip("Later tools")
+        self.tab_forward.setFixedWidth(22)
+        self.tab_forward.clicked.connect(lambda: self._scroll_tabs(140))
+        self.tab_forward.setVisible(False)
+        layout.addWidget(self.tab_forward)
+
         self.tool_tabs = {}
         self.tab_holders = {}
         self.tab_closers = {}
@@ -125,7 +198,7 @@ class ShellWindow(QMainWindow):
             pair = QHBoxLayout(holder)
             design.margins(pair, "0")
             pair.setSpacing(0)
-            tab = QPushButton(spec.name)
+            tab = ToolTab(spec.name)
             tab.setObjectName("SuiteTab")
             tab.setCheckable(True)
             tab.setIconSize(QSize(design.ICON["s"], design.ICON["s"]))
@@ -143,9 +216,12 @@ class ShellWindow(QMainWindow):
             self.tool_tabs[spec.id] = tab
             self.tab_closers[spec.id] = closer
             self.tab_holders[spec.id] = holder
-            layout.addWidget(holder)
+            strip_layout.addWidget(holder)
 
-        layout.addStretch(1)
+        strip_layout.addStretch(1)
+        # The strip must not make the bar any taller than the tabs in it.
+        tall = max([h.sizeHint().height() for h in self.tab_holders.values()] or [26])
+        self.tab_scroll.setFixedHeight(tall)
         self.jobs_button = QPushButton("")
         self.jobs_button.setObjectName("SuiteTab")
         self.jobs_button.setToolTip("Background jobs from every tool")
@@ -384,6 +460,35 @@ class ShellWindow(QMainWindow):
         spec = next((s for s in self.tools if s.id == current), None)
         self.setWindowTitle("%s  —  %s" % (SUITE_NAME, spec.name) if spec else SUITE_NAME)
         self._sync_shortcuts()
+        # After the strip has been laid out, not before: a tab that has only
+        # just appeared has no geometry yet, so neither scrolling to it nor
+        # asking whether anything overflows would give the right answer.
+        QTimer.singleShot(0, self._sync_tab_strip)
+
+    # ── the tab strip ─────────────────────────────────────
+    def _scroll_tabs(self, by) -> None:
+        bar = self.tab_scroll.horizontalScrollBar()
+        bar.setValue(bar.value() + int(by))
+        self._sync_tab_strip()
+
+    def _sync_tab_strip(self, current=None) -> None:
+        """Show the arrows only when there is something past the edge, and
+        keep the tool you are in where you can see it."""
+        if current is None:
+            current = self.current_tool_id()
+        tab = self.tool_tabs.get(current)
+        if tab is not None and tab.isVisible():
+            self.tab_scroll.ensureWidgetVisible(tab, 40, 0)
+        bar = self.tab_scroll.horizontalScrollBar()
+        overflowing = bar.maximum() > 0
+        self.tab_back.setVisible(overflowing)
+        self.tab_forward.setVisible(overflowing)
+        self.tab_back.setEnabled(bar.value() > bar.minimum())
+        self.tab_forward.setEnabled(bar.value() < bar.maximum())
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._sync_tab_strip)
 
     def _sync_shortcuts(self) -> None:
         """Let the tool on show keep any shell key it binds itself.

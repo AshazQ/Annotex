@@ -261,6 +261,16 @@ QPushButton#SuiteTabClose {
     padding: %(zero)s; min-height: %(zero)s; min-width: %(space_xl)s;
 }
 QPushButton#SuiteTabClose:hover { background: %(dangerSoft)s; border-color: %(danger)s; }
+/* The arrows either side of the tab strip: a tab's side padding would leave
+   a chevron this narrow no room at all, so they carry none. */
+QPushButton#SuiteTabScroll {
+    background: transparent; border: %(hairline)s solid transparent;
+    border-radius: %(radius_s)s; padding: %(zero)s; min-width: %(space_l)s;
+    color: %(sub)s; font-size: %(type_headline)s;
+}
+QPushButton#SuiteTabScroll:hover { background: %(surfaceHover)s; color: %(text)s; }
+QPushButton#SuiteTabScroll:disabled { color: %(border)s; }
+QScrollArea#SuiteTabStrip { background: transparent; border: %(zero)s; }
 QFrame#ToolCard, QFrame#FeatureCard, QFrame#TileCard, QFrame#ContinueCard {
     background: %(surface)s; border: %(hairline)s solid %(border)s; border-radius: %(radius_l)s;
 }

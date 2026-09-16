@@ -37,6 +37,15 @@ class MediaToolPage(QMainWindow):
     TAGLINE = ""
     MARK = "box"
     DEFAULTS = {}
+    # An option panel may insist on this much width, and no more: past it the
+    # panel itself would be what stops the window fitting a small screen.
+    OPTION_WIDTH_CAP = 400
+    # ...and never less than this, below which it is not worth reading and the
+    # panel is better off scrolling sideways.
+    OPTION_WIDTH_FLOOR = 240
+    # What the panes together may demand.  A laptop running Windows at 150 %
+    # leaves 1093 px; the page's own margins and the window frame take the rest.
+    PANE_WIDTH_BUDGET = 1040
 
     def __init__(self, app, host=None, settings=None, jobs=None):
         super().__init__()
@@ -49,6 +58,7 @@ class MediaToolPage(QMainWindow):
         self.jobs = jobs or getattr(host, "jobs", None) or JobManager(self)
         self._status_level = "info"
         self._header_buttons = []
+        self._option_cards = []
 
         self.setWindowTitle(self.TOOL_NAME)
         self.setMinimumSize(640, 440)
@@ -113,6 +123,7 @@ class MediaToolPage(QMainWindow):
         self.jobs.jobAdded.connect(lambda _job: self._sync_jobs_label())
 
         self.build()
+        self._settle_option_cards()
         self.dock.setVisible(bool(self._header_buttons))
         self._build_menus()
         self._apply_theme()
@@ -158,13 +169,51 @@ class MediaToolPage(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         holder = QWidget()
         layout = QVBoxLayout(holder)
         design.margins(layout, "m")
         layout.setSpacing(12)
         scroll.setWidget(holder)
         outer.addWidget(scroll)
+        self._option_cards.append((frame, holder, scroll))
         return frame, layout
+
+    def _settle_option_cards(self) -> None:
+        """Stop a splitter squeezing an option panel below its own controls.
+
+        A scroll area will shrink to nothing if it is allowed to, so the
+        splitter used to take every pixel it needed from here - on a 1093 px
+        screen the Video Merger's options came out 71 px wide.  Each panel now
+        asks for the width its controls actually need, and the pane beside it,
+        which scrolls, gives way instead."""
+        panels = []
+        for frame, holder, scroll in self._option_cards:
+            wanted = holder.minimumSizeHint().width()
+            if wanted <= 0:
+                continue
+            bar = scroll.verticalScrollBar().sizeHint().width()
+            frame.setMinimumWidth(min(wanted + bar + 10, self.OPTION_WIDTH_CAP))
+            panels.append(frame)
+        if not panels:
+            return
+        # What is asked for is not always affordable: the panes together must
+        # still fit a small screen, so a panel gives back what the page cannot
+        # pay for and scrolls sideways for the rest.
+        mine, others = [], 0
+        for index in range(self.splitter.count()):
+            pane = self.splitter.widget(index)
+            if pane in panels:
+                mine.append(pane)
+            else:
+                others += max(pane.minimumSizeHint().width(), pane.minimumWidth())
+        if not mine:
+            return
+        handles = self.splitter.handleWidth() * max(0, self.splitter.count() - 1)
+        share = (self.PANE_WIDTH_BUDGET - others - handles) // len(mine)
+        for pane in mine:
+            if pane.minimumWidth() > share:
+                pane.setMinimumWidth(max(share, self.OPTION_WIDTH_FLOOR))
 
     def add_dock_button(self, icon_name, tip, slot) -> QPushButton:
         button = QPushButton()

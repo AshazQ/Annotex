@@ -224,6 +224,61 @@ def main():
         ok("%s fits a 1093x614 screen (needs %dx%d)" % (spec.name, wide, high),
            wide <= SCREEN_W and high <= SCREEN_H)
 
+    # ── a media tool's option panel keeps its width ───────
+    # The options are a scroll area, which will shrink to nothing if allowed
+    # to, so a splitter took every pixel it was short from there: at 1093 px
+    # the Video Merger's options came out 71 px wide for 320 px of controls.
+    from PySide6.QtWidgets import QScrollArea
+    for tool_id in ("frames", "trim", "vconvert", "merge", "iconvert"):
+        shell.open_tool(tool_id)
+        for _ in range(20):
+            app.processEvents()
+        media = shell.pages[tool_id]
+        # The options are the last column; the centre beside them is meant to
+        # scroll, so only this one is held to keeping its width.
+        options = media.splitter.widget(media.splitter.count() - 1)
+        shortfall = 0
+        for area in options.findChildren(QScrollArea):
+            inner = area.widget()
+            if inner is not None:
+                shortfall = max(shortfall,
+                                inner.minimumSizeHint().width() - area.viewport().width())
+        ok("%s: the options panel is not crushed by the panes beside it%s"
+           % (tool_id, "" if shortfall <= 80 else " (short by %d px)" % shortfall),
+           shortfall <= 80)
+
+    # ── the tab bar with every tool open ──────────────────
+    # Squeezed narrower than its name, a plain button shows the middle of the
+    # word and no ellipsis, so "LabelImg Master" and "LabelImg Shapes" both
+    # read as "belImg".  Every tab must keep room for its name; the strip
+    # scrolls instead, and the tool you are in is scrolled into view.
+    from PySide6.QtGui import QFontMetrics
+    shell.resize(SCREEN_W, SCREEN_H)
+    for _ in range(15):
+        app.processEvents()
+    cramped = []
+    for tool_id, tab in shell.tool_tabs.items():
+        if tool_id not in shell.pages:
+            continue
+        name = getattr(tab, "full_text", tab.text)()
+        needed = QFontMetrics(tab.font()).horizontalAdvance(name)
+        if tab.width() - 24 < needed:
+            cramped.append("%s has %d px for %d px of name" % (tool_id, tab.width() - 24, needed))
+    ok("with every tool open no tab is squeezed below its name%s"
+       % ("" if not cramped else " (%s)" % "; ".join(cramped[:3])), not cramped)
+    strip = getattr(shell, "tab_scroll", None)
+    ok("the tabs sit in a strip that can scroll", strip is not None)
+    if strip is not None:
+        tab = shell.tool_tabs.get(shell.current_tool_id())
+        if tab is not None:
+            left = tab.mapTo(strip.viewport(), tab.rect().topLeft()).x()
+            ok("the tool you are in is scrolled into view",
+               -1 <= left < strip.viewport().width())
+        ok("the strip scrolls rather than shrinking the tabs",
+           strip.horizontalScrollBar().maximum() > 0)
+        ok("and the arrows appear to reach the rest",
+           shell.tab_back.isVisible() and shell.tab_forward.isVisible())
+
     shell.close()
     print("=" * 60)
     if FAILS:
