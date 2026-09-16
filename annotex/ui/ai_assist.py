@@ -317,6 +317,7 @@ class SamAssistant(QObject):
         self._generation = 0
         self._last = None                # (token, points, box, logits) of the last answer
         self.last_refined = False        # whether the last answer built on the one before
+        self.last_notice = ""            # something about the last answer worth saying
         self._lock = threading.Lock()
         self._cache = None
         self._cache_off = False
@@ -725,6 +726,10 @@ class SamAssistant(QObject):
         except Exception as exc:
             self._last = None
             return None, "the model could not answer that prompt: %s" % exc
+        ignored = int(getattr(runtime, "last_ignored", 0) or 0)
+        self.last_notice = (
+            "%s ignores exclude clicks - use a box, or SAM ViT-B to exclude parts"
+            % (self.model_name() or "this model")) if ignored else ""
         logits = getattr(runtime, "last_low_res", None)
         self._last = (self._token, points, box, logits) if logits is not None else None
         self.last_refined = refine is not None

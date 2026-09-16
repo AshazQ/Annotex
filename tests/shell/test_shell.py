@@ -76,6 +76,13 @@ try:
     ok("the bar offers Diagnostics", shell.help_button.isVisible()
        and not shell.help_button.icon().isNull())
     ok("and names its key", "F1" in shell.help_button.toolTip())
+    # What a packaged build is checked with: seven tools are opened by name,
+    # which a build can silently leave out, so every tool must say where its
+    # window lives and that window must load.
+    from annotex.shell.registry import verify_tools, window_class_path
+    ok("every tool says where its window lives",
+       all(window_class_path(spec) for spec in shell.tools))
+    ok("and every one of those windows loads", verify_tools(shell.tools) == [])
     ok("F1 is bound for the whole application",
        any(a.shortcut().toString() == "F1" for a in shell.actions()))
     from annotex.shell.diagnostics import DiagnosticsDialog

@@ -140,8 +140,11 @@ def main():
        not runlog.rotate(os.path.join(SANDBOX, "nothing.log")))
 
     # ══ a home directory that refuses to be written to ════
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
-        print("  --  skipping the read-only home checks (running as root)",
+    # Windows ignores these permission bits, and root ignores them anywhere,
+    # so on either a "read-only" folder is not read-only and there is nothing
+    # to check.
+    if os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0):
+        print("  --  skipping the read-only home checks (permissions not enforced here)",
               file=REAL_STDOUT)
     else:
         locked = os.path.join(SANDBOX, "locked")

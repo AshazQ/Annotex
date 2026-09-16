@@ -25,6 +25,28 @@ installing.
 
 ## Getting started
 
+### Download it
+
+Take the archive for your platform from the
+[Releases page](https://github.com/AshazQ/Annotex/releases), unpack it
+anywhere, and run **Annotex**. There is nothing to install and no Python
+needed; delete the folder to remove it. Settings live in your user folder and
+survive updates.
+
+| You have | Download |
+|---|---|
+| Windows 10 or 11 | `Annotex-<version>-windows-x64.zip` |
+| A Mac with Apple silicon | `Annotex-<version>-macos-arm64.zip` |
+| Linux (glibc 2.35+: Ubuntu 22.04, Fedora 36 and later) | `Annotex-<version>-linux-x64.tar.gz` |
+
+The builds are not signed with a paid certificate, so the first start needs
+one extra step: on **Windows** choose *More info → Run anyway*; on **macOS**
+right-click Annotex and choose *Open*. AI select downloads its model the first
+time you use it. If anything goes wrong, **Diagnostics** (F1) collects what a
+bug report needs.
+
+### Or run it from source
+
 ```
 python bootstrap.py --shortcut --run
 ```
@@ -32,20 +54,40 @@ python bootstrap.py --shortcut --run
 That creates a private environment in `.venv`, installs everything, runs the
 self-tests, writes a desktop shortcut and starts Annotex. No administrator
 rights, nothing installed system-wide. Add `--ai` to install onnxruntime and
-numpy, for AI select in the labelling tools and AI sorting in the Image
-Sorter.
+numpy, for AI select in the labelling tools and AI and example sorting in the
+Image Sorter.
 
 | Command | What it does |
 |---|---|
 | `python run.py` | the Home dashboard |
-| `python run.py --tool <id>` | straight into a tool: `roi`, `labelimg`, `shapes`, `frames`, `trim`, `vconvert`, `merge`, `iconvert`, `sorter` |
+| `python run.py --tool <id>` | straight into a tool: `roi`, `labelimg`, `shapes`, `frames`, `trim`, `vconvert`, `merge`, `iconvert`, `sorter`, `dataset` |
 | `python run.py --tool roi <folder>` | a tool with a folder open |
 | `python run.py --selftest` | verify every tool on this machine, no display needed |
 | `python run.py --check` | versions of Python, Qt, Pillow, lxml, ffmpeg, onnxruntime |
+| `python run.py --verify-tools` | load every tool's window without opening one - what a packaged build is checked with |
 | `python bootstrap.py --upgrade` | refresh the environment |
 | `python bootstrap.py --offline wheels/` | install from a folder of wheels |
-| `python build/build_exe.py` | build a standalone executable for this platform (ffmpeg included) |
 | `python tests/run_all.py` | every test suite, headless - including a batch built to break the labelling tools and a thousand random operations against each |
+
+### Building and releasing
+
+| Command | What it does |
+|---|---|
+| `python build/build_exe.py --archive` | build this platform's application into `dist/`, and pack it as the zip or tar.gz a release ships |
+| `python build/smoke_test.py` | run that build headless: every tool loads, every self-test passes inside it, and it writes its log |
+
+Every push runs every test suite on Windows, macOS and Linux, then builds and
+smoke-tests the application on each. To release, add a section for the version
+to `CHANGELOG.md`, set the same version in `annotex/config.py`, and push a tag:
+
+```
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+That builds all three platforms, checks the tag matches the version, runs each
+build, and prepares a **draft** release with the archives attached and the
+notes taken from the changelog. Nothing is public until it is published on
+GitHub.
 
 ---
 

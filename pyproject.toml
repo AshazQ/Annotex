@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "annotex"
-version = "1.0.0"
+# The version lives in annotex/config.py alone, so it cannot say two things.
+dynamic = ["version"]
 description = "Annotation, video and image tools behind one dashboard"
 readme = "README.md"
 license = {text = "GPL-3.0-or-later"}
@@ -23,7 +24,11 @@ annotex = "annotex.app:main"
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
+test = ["onnx"]
 ai = ["onnxruntime>=1.17", "numpy"]
+
+[tool.setuptools.dynamic]
+version = {attr = "annotex.config.SUITE_VERSION"}
 
 [tool.setuptools.packages.find]
 include = ["annotex*"]

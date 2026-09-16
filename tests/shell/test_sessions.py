@@ -109,7 +109,8 @@ def main():
         ok("a damaged store is empty, not an error (%s)" % junk[:18],
            SessionStore(broken).sessions() == [])
 
-    if not (hasattr(os, "geteuid") and os.geteuid() == 0):
+    # Windows ignores these permission bits, and root ignores them anywhere.
+    if os.name != "nt" and not (hasattr(os, "geteuid") and os.geteuid() == 0):
         locked = os.path.join(SANDBOX, "locked")
         os.makedirs(locked)
         os.chmod(locked, 0o500)

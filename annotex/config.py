@@ -19,7 +19,7 @@ from pathlib import Path
 
 SUITE_NAME = "Annotex"
 SUITE_SLUG = "annotex"
-SUITE_VERSION = "1.0.0"
+SUITE_VERSION = "1.1.0"
 SUITE_TAGLINE = "Annotation and review tools"
 
 # What Annotex does when it starts.  Home has always been the answer and

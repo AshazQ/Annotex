@@ -1,0 +1,76 @@
+# Build Annotex for each platform, run the build headless, and keep the
+# archive.  Called by CI on every push, and by Release on a version tag.
+#
+# PyInstaller cannot cross-compile, so each platform builds on its own kind
+# of machine.  Linux builds on the oldest supported Ubuntu, because a binary
+# linked against a newer glibc will not start on an older distribution,
+# while one built against an older glibc runs on the newer ones.
+
+name: Package
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Version tag being released - checked against the version - or empty"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build · ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: macos-14
+            label: macos-arm64
+          - os: ubuntu-22.04
+            label: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Qt's system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libopengl0 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - name: Install
+        run: python -m pip install -r requirements.txt onnxruntime numpy "pyinstaller>=6.0"
+
+      - name: Build
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            python build/build_exe.py --clean --archive --check-tag "${{ inputs.tag }}"
+          else
+            python build/build_exe.py --clean --archive
+          fi
+
+      - name: Run the build, headless
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python build/smoke_test.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: annotex-${{ matrix.label }}
+          path: |
+            dist/Annotex-*.zip
+            dist/Annotex-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14

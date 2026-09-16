@@ -1,0 +1,52 @@
+# A version tag - v1.1.0 - builds every platform, runs each build, and
+# prepares a GitHub release with the archives attached.
+#
+# The release is created as a DRAFT.  Nothing is public until somebody reads
+# it over on GitHub and presses Publish: a release is what strangers
+# download, and that is a decision for a person, not for a script.
+#
+#     git tag v1.1.0 && git push origin v1.1.0
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package
+    uses: ./.github/workflows/package.yml
+    with:
+      tag: ${{ github.ref_name }}
+
+  release:
+    name: Draft the release
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: annotex-*
+          merge-multiple: true
+
+      - name: Notes from the changelog
+        run: python build/release_notes.py "${{ github.ref_name }}" > notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Annotex ${{ github.ref_name }}
+          body_path: notes.md
+          files: |
+            dist/Annotex-*.zip
+            dist/Annotex-*.tar.gz
+          fail_on_unmatched_files: true

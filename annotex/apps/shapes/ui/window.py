@@ -1312,6 +1312,13 @@ class ShapesWindow(QMainWindow):
                          "right-click to exclude part of it", "warning")
             return
         canvas.set_ai_preview(points_out)
+        notice = getattr(assistant, "last_notice", "")
+        if notice:
+            # An exclude click this model cannot use is said out loud, not
+            # quietly dropped - otherwise it just looks as if it did nothing.
+            self._status("AI outline of %d points  ·  %s" % (len(points_out), notice),
+                         "warning")
+            return
         self._status("AI outline of %d points  ·  Enter keeps it, more clicks refine "
                      "it, Esc drops it" % len(points_out), "info")
 

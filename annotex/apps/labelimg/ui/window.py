@@ -1855,6 +1855,12 @@ class LabelImgWindow(QMainWindow):
         clean, _messages = preview.rounded().validated(self.image_shape[1],
                                                        self.image_shape[0])
         canvas.set_ai_preview(clean if clean is not None else preview.rounded())
+        notice = getattr(assistant, "last_notice", "")
+        if notice:
+            # An exclude click this model cannot use is said out loud, not
+            # quietly dropped - otherwise it just looks as if it did nothing.
+            self._status("AI proposal %s  ·  %s" % (preview.describe(), notice), "warning")
+            return
         self._status("AI proposal %s  ·  Enter keeps it, more clicks refine it, "
                      "Esc drops it" % preview.describe(), "info")
 

@@ -31,6 +31,9 @@ TIMEOUT = 30                     # seconds without a byte before giving up
 USER_AGENT = "Annotex model download"
 
 LABELME_SAM = "https://github.com/wkentaro/labelme/releases/download/sam-20230416/"
+# EfficientSAM, exported by LabelMe's author; the checksums are the ones his
+# own osam publishes, and they match the files as downloaded.
+EFFICIENT_SAM = "https://github.com/labelmeai/efficient-sam/releases/download/onnx-models-20231225/"
 
 
 class DownloadError(RuntimeError):
@@ -96,11 +99,18 @@ class CatalogModel:
 
 CATALOG = [
     CatalogModel(
-        "sam_vit_b", "SAM ViT-B", "fastest - recommended on a laptop",
+        "sam_vit_b", "SAM ViT-B", "recommended - every kind of click, a few seconds an image",
         RemoteFile(LABELME_SAM + "sam_vit_b_01ec64.quantized.encoder.onnx", 99827688,
                    "3346b9cc551c9902fbf3b203935e933592b22e042365f58321c17fc12641fd6a"),
         RemoteFile(LABELME_SAM + "sam_vit_b_01ec64.quantized.decoder.onnx", 8743656,
                    "edbcf1a0afaa55621fb0abe6b3db1516818b609ea9368f309746a3afc68f7613")),
+    CatalogModel(
+        "efficient_sam_vitt", "EfficientSAM ViT-T",
+        "fastest - about a second an image, but no exclude clicks",
+        RemoteFile(EFFICIENT_SAM + "efficient_sam_vitt_encoder.onnx", 24799761,
+                   "7a73ee65aa2c37237c89b4b18e73082f757ffb173899609c5d97a2bbd4ebb02d"),
+        RemoteFile(EFFICIENT_SAM + "efficient_sam_vitt_decoder.onnx", 16565728,
+                   "e1afe46232c3bfa3470a6a81c7d3181836a94ea89528aff4e0f2d2c611989efd")),
     CatalogModel(
         "sam_vit_l", "SAM ViT-L", "more accurate, slower",
         RemoteFile(LABELME_SAM + "sam_vit_l_0b3195.quantized.encoder.onnx", 322569107),

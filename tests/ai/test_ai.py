@@ -34,6 +34,13 @@ def ok(label, condition):
     print(("  ok  " if condition else "  XX  ") + label)
 
 
+def _paired(names):
+    """Whether model discovery would pair these file names up."""
+    from annotex.core.ai.sam import _family, _role
+    roles = {_role(n) for n in names}
+    return roles == {"encoder", "decoder"} and len({_family(n) for n in names}) == 1
+
+
 def missing():
     absent = []
     for module in ("numpy", "onnxruntime", "onnx"):
@@ -169,6 +176,45 @@ def main():
     ok("a previous answer of the wrong size is ignored, not fed in",
        abs(float(refiner.last_low_res.mean())) < 1e-6)
     refiner.unload()
+
+    # ── an EfficientSAM-shaped export ─────────────────────
+    # Its prompts are batched twice, its size is int64, its best mask is the
+    # one its IoU output points at, and it has no exclude click at all.
+    from fake_sam import build_batched_pair
+    b_encoder, b_decoder = build_batched_pair(os.path.join(SANDBOX, "batched"))
+    batched = SamRuntime(b_encoder, b_decoder, "batched")
+    batched.load()
+    ok("a batched export is recognised from its graph", batched._plan.get("batched") is True)
+    ok("and is known not to take exclude clicks", batched.supports_exclude is False)
+    ok("the reference export still takes them", runtime.supports_exclude is True)
+    b_rgb = np.full((48, 64, 3), 200, dtype=np.uint8)
+    b_embedding = batched.encode(b_rgb, (300, 400))
+    mask, size, _score = batched.predict(b_embedding, points=[(200, 150, True)], max_side=64)
+    ok("a click is answered in the frame it was asked for", size == (48, 64))
+    ok("with the mask the IoU output picks, not the first", bool(mask.all()))
+    mask, size, _score = batched.predict(b_embedding, box=(10, 10, 390, 290), max_side=64)
+    ok("a box is answered too", bool(mask.all()))
+    mask, size, _score = batched.predict(
+        b_embedding, points=[(200, 150, True), (5, 5, False)], max_side=64)
+    ok("an exclude click is left out rather than turning the answer inside out",
+       bool(mask.all()) and batched.last_ignored == 1)
+    try:
+        batched.predict(b_embedding, points=[(5, 5, False)], max_side=64)
+        ok("a prompt of nothing but exclude clicks is refused", False)
+    except SamError as exc:
+        ok("a prompt of nothing but exclude clicks is refused, in a sentence",
+           "exclude" in str(exc))
+    runtime.predict(runtime.encode(np.full((32, 64, 3), 100, dtype=np.uint8), (100, 200)),
+                    points=[(50, 50, True), (10, 10, False)])
+    ok("the reference export ignores nothing", runtime.last_ignored == 0)
+
+    from annotex.core.ai import catalog
+    efficient = catalog.by_key("efficient_sam_vitt")
+    ok("the fast model is in the catalogue", efficient is not None)
+    ok("with its size and checksum pinned",
+       efficient is not None and all(f.size > 0 and len(f.sha256) == 64 for f in efficient.files))
+    ok("and its files pair up once downloaded",
+       efficient is not None and _paired([f.filename for f in efficient.files]))
 
     # ── the assistant, in a real window ───────────────────
     from PySide6.QtGui import QColor, QImage

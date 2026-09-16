@@ -111,7 +111,46 @@ def _shapes_forget(folder):
 def _page(module, name):
     def create(host):
         return getattr(importlib.import_module(module), name)(host.app, host=host)
+    create.module, create.attribute = module, name
     return create
+
+
+# Where each tool's window lives, for verify_tools.  The ones opened through
+# _page carry this themselves - seven of them; these three import it inside
+# their functions.
+_WINDOWS = {"roi": ("annotex.apps.roi.ui.main_window", "MainWindow"),
+            "labelimg": ("annotex.apps.labelimg.ui.window", "LabelImgWindow"),
+            "shapes": ("annotex.apps.shapes.ui.window", "ShapesWindow")}
+
+
+def window_class_path(spec):
+    """(module, class) a tool's window comes from, or None."""
+    module = getattr(spec.create, "module", "")
+    if module:
+        return module, getattr(spec.create, "attribute", "")
+    return _WINDOWS.get(spec.id)
+
+
+def verify_tools(tools=None):
+    """[(tool name, problem)] for every tool whose window cannot be loaded.
+
+    Opens nothing - it imports each tool's window the way clicking its tile
+    would.  A packaged build that left a module out shows every tile and then
+    fails on the click; this finds that without anybody clicking."""
+    problems = []
+    for spec in (tools if tools is not None else TOOLS):
+        where = window_class_path(spec)
+        if where is None:
+            problems.append((spec.name, "no window is registered for it"))
+            continue
+        module, attribute = where
+        try:
+            loaded = importlib.import_module(module)
+            if attribute and not hasattr(loaded, attribute):
+                problems.append((spec.name, "%s has no %s" % (module, attribute)))
+        except Exception as exc:                                    # noqa: BLE001
+            problems.append((spec.name, "%s: %s" % (type(exc).__name__, exc)))
+    return problems
 
 
 def _tools():

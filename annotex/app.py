@@ -180,6 +180,18 @@ def run_selftests() -> int:
     return 1 if failures else 0
 
 
+def verify_tools() -> int:
+    """Every tool's window can be loaded - the check a packaged build needs."""
+    from .shell.registry import TOOLS, verify_tools as check
+    problems = check(TOOLS)
+    for spec in TOOLS:
+        bad = [why for name, why in problems if name == spec.name]
+        print("%s %s%s" % ("x " if bad else "ok", spec.name, ("  -  " + bad[0]) if bad else ""))
+    print("\n%s" % ("ALL %d TOOLS LOAD" % len(TOOLS) if not problems
+                     else "%d TOOL(S) CANNOT BE LOADED" % len(problems)))
+    return 1 if problems else 0
+
+
 # ══════════════════════════════════════════════════════════════
 # CRASH HANDLING
 # ══════════════════════════════════════════════════════════════
@@ -295,6 +307,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="run every tool's offline checks and exit (no GUI needed)")
     parser.add_argument("--check", action="store_true",
                         help="print the environment report and exit")
+    parser.add_argument("--verify-tools", action="store_true",
+                        help="load every tool's window without opening it, and exit "
+                             "non-zero if any cannot be loaded (for packaged builds)")
     parser.add_argument("--reset-settings", action="store_true",
                         help="start the shell from default settings")
     parser.add_argument("--version", action="version",
@@ -324,6 +339,8 @@ def run(argv=None) -> int:
         return 0
     if args.selftest:
         return run_selftests()
+    if args.verify_tools:
+        return verify_tools()
 
     ok, problems = check_environment(require_gui=True)
     if not ok:
