@@ -231,6 +231,9 @@ class TrimPage(VideoPage):
     def trim(self, paths) -> None:
         mode = "exact" if self.exact.isChecked() else "fast"
         join = self.join.isChecked()
+        # Read now, on this thread: the work runs on another, where a widget
+        # must not be touched - and a later change must not move a queued job.
+        output_dir = self.output.folder()
         self.settings.update({"mode": mode, "join": join})
         queued = 0
         for path in paths:
@@ -239,7 +242,7 @@ class TrimPage(VideoPage):
                 continue
 
             def work(ctx, path=path, segments=segments):
-                outputs = core.trim_video(ctx, path, segments, mode, self.output.folder(), join)
+                outputs = core.trim_video(ctx, path, segments, mode, output_dir, join)
                 return "%d file(s) in %s" % (len(outputs), os.path.basename(os.path.dirname(outputs[0])))
 
             self.submit(Job("Trim · %s" % os.path.basename(path), work))

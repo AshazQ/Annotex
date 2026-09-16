@@ -1589,6 +1589,11 @@ class ShapesWindow(QMainWindow):
         self.act("verify").setChecked(self.verified)
         if self._write_current():
             self._status("Marked verified" if self.verified else "Verified mark removed", "good")
+        else:
+            # Not on disk, so not shown either.
+            self.verified = not self.verified
+            self.verify_button.setChecked(self.verified)
+            self.act("verify").setChecked(self.verified)
 
     # ══════════════════════════════════════════════════════
     # EXPORT

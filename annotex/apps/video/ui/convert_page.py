@@ -117,7 +117,7 @@ class ConvertPage(VideoPage):
         (self.by_size if s.get("size_mode") else self.by_quality).setChecked(True)
         for signal in (self.quality.valueChanged, self.by_size.toggled, self.preset.currentIndexChanged,
                        self.height_box.currentIndexChanged, self.fps_box.currentIndexChanged,
-                       self.target.valueChanged):
+                       self.target.valueChanged, self.never_upscale.toggled):
             signal.connect(lambda *_a: self._sync())
         self._sync()
 
@@ -170,9 +170,12 @@ class ConvertPage(VideoPage):
                               "size_mode": bool(options.target_mb), "target_mb": self.target.value(),
                               "speed": options.speed, "never_upscale": options.never_upscale})
         paths = [p for p in paths if p]
+        # Read now, on this thread: the work runs on another, where a widget
+        # must not be touched - and a later change must not move a queued job.
+        output_dir = self.output.folder()
         for path in paths:
             def work(ctx, path=path):
-                output = core.convert_video(ctx, path, options, self.output.folder())
+                output = core.convert_video(ctx, path, options, output_dir)
                 return "%s · %s" % (os.path.basename(output), human_size(os.path.getsize(output)))
 
             self.submit(Job("Convert · %s" % os.path.basename(path), work))
