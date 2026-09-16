@@ -198,6 +198,9 @@ class Settings:
     def __init__(self, path: Path | None = None):
         self.path = Path(path) if path else settings_path()
         self.data = dict(DEFAULT_SETTINGS)
+        # Keys a batch's own settings file has taken over for this session:
+        # key -> the person's own value, which is what saving writes.
+        self.overrides = {}
         self.load()
 
     def load(self) -> None:
@@ -214,7 +217,9 @@ class Settings:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
+            own = dict(self.data)
+            own.update(self.overrides)
+            tmp.write_text(json.dumps(own, indent=2), encoding="utf-8")
             os.replace(tmp, self.path)
             return True
         except Exception:
@@ -225,12 +230,30 @@ class Settings:
         return self.data.get(key, DEFAULT_SETTINGS.get(key, default))
 
     def set(self, key, value) -> None:
+        self.overrides.pop(key, None)          # chosen now, so it is the person's own
         self.data[key] = value
         self.save()
 
     def update(self, mapping) -> None:
+        for key in mapping:
+            self.overrides.pop(key, None)
         self.data.update(mapping)
         self.save()
+
+    def apply_overrides(self, mapping) -> int:
+        """Let a batch's settings win for this session without ever saving
+        them as the person's own.  The previous batch's are undone first, so
+        they do not follow into the next folder.  Returns how many apply."""
+        for key, own in self.overrides.items():
+            self.data[key] = own
+        self.overrides = {}
+        applied = 0
+        for key, value in (mapping or {}).items():
+            if key in DEFAULT_SETTINGS:
+                self.overrides[key] = self.data.get(key, DEFAULT_SETTINGS[key])
+                self.data[key] = value
+                applied += 1
+        return applied
 
     def push_recent(self, folder: str, limit: int = 12) -> None:
         folder = str(folder)

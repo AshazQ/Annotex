@@ -701,7 +701,6 @@ class MainWindow(QMainWindow):
             return
 
         writable, why = folder_is_writable(folder)
-        self.read_only = not writable
         if not writable:
             answer = messages.ask(
                 self, "Read-only folder",
@@ -720,13 +719,20 @@ class MainWindow(QMainWindow):
                     "%s\n\nOpening it anyway can corrupt the outputs.\n"
                     "Continue?" % message)
                 if not answer:
+                    self._relock_current()
                     return
                 self.lock.acquire(folder, force=True)
                 lock_note = "lock overridden - close the other session"
             elif message:
                 lock_note = message
+        elif self.lock.held:
+            self.lock.release()
 
+        self.read_only = not writable
         self.folder = folder
+        # ROIs waiting for their image's size belong to the folder they came
+        # from, not to an image of the same name in this one.
+        self._pending_norm = {}
         self.image_files = sorted(
             (f for f in names
              if f.lower().endswith(IMG_EXTS) and f not in OUTPUT_DIRS
@@ -775,6 +781,12 @@ class MainWindow(QMainWindow):
         self._load_image(0)
         self._offer_draft()
         self._sync_actions()
+
+    def _relock_current(self) -> None:
+        """Asking for another folder let go of this one's lock; the other
+        was not opened after all, so take it back."""
+        if self.folder and not self.read_only and not self.lock.held:
+            self.lock.acquire(self.folder)
 
     def reload_folder(self) -> None:
         if not self.folder:
@@ -1530,16 +1542,19 @@ class MainWindow(QMainWindow):
         written back into the user's own preferences."""
         path = os.path.join(str(folder), PROJECT_SETTINGS_NAME)
         data = read_json(path, None)
-        if not isinstance(data, dict):
-            return ""
-        applied = 0
-        for key in self.PROJECT_KEYS:
-            if key in data:
-                self.settings.data[key] = data[key]
-                applied += 1
+        wanted = {key: data[key] for key in self.PROJECT_KEYS
+                  if isinstance(data, dict) and key in data}
+        had = bool(getattr(self.settings, "overrides", None))
+        apply = getattr(self.settings, "apply_overrides", None)
+        if apply is not None:
+            applied = apply(wanted)
+        else:                                   # a plain settings store
+            self.settings.data.update(wanted)
+            applied = len(wanted)
+        if applied or had:
+            self._apply_settings()
         if not applied:
             return ""
-        self._apply_settings()
         return "%d batch setting(s) applied from %s" % (applied,
                                                         PROJECT_SETTINGS_NAME)
 
@@ -1656,6 +1671,10 @@ class MainWindow(QMainWindow):
     def import_annotations(self) -> None:
         if not self.folder:
             self._status("Open a batch folder first", "warning")
+            return
+        # The import reloads the image on screen from the merged rows, so
+        # what is drawn on it now goes to disk first rather than vanishing.
+        if not self._commit_current():
             return
         dialog = ImportDialog(self, self.folder)
         if dialog.exec() != Dialog.DialogCode.Accepted:

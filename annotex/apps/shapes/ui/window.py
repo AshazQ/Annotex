@@ -800,6 +800,10 @@ class ShapesWindow(QMainWindow):
                     "%s\n\nTwo sessions saving the same shapes can overwrite each other's "
                     "work.\nOpen it anyway?" % message)
                 if not answer:
+                    # The folder still open keeps its lock: asking for this one
+                    # let go of it.
+                    if self.folder and not self.read_only and not self.lock.held:
+                        self.lock.acquire(self.folder)
                     return
                 self.lock.acquire(folder, force=True)
                 note = "lock overridden - close the other session"
