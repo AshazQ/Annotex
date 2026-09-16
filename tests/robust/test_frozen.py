@@ -47,7 +47,9 @@ def ok(label, condition):
 NO_STREAMS = r'''
 import os, sys
 sys.path.insert(0, %(root)r)
-os.environ["HOME"] = %(sandbox)r
+os.environ["HOME"] = os.environ["USERPROFILE"] = %(sandbox)r
+os.environ["APPDATA"] = os.path.join(%(sandbox)r, "AppData", "Roaming")
+os.environ["LOCALAPPDATA"] = os.path.join(%(sandbox)r, "AppData", "Local")
 os.environ["XDG_CONFIG_HOME"] = %(config)r
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
@@ -80,11 +82,14 @@ def in_a_windowed_build():
         handle.write(NO_STREAMS % {"root": ROOT, "sandbox": folder, "config": config})
     done = subprocess.run([sys.executable, script], capture_output=True, text=True,
                           timeout=300)
-    log = os.path.join(config, "annotex", "annotex.log")
+    # The log lives wherever this platform keeps per-user settings, so it is
+    # looked for, not assumed to be at the Linux path.
     text = ""
-    if os.path.isfile(log):
-        with open(log, "r", encoding="utf-8", errors="replace") as handle:
-            text = handle.read()
+    for place, _dirs, files in os.walk(folder):
+        if "annotex.log" in files:
+            with open(os.path.join(place, "annotex.log"), "r", encoding="utf-8",
+                      errors="replace") as handle:
+                text += handle.read()
     return done, text
 
 

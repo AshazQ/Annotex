@@ -34,6 +34,23 @@ def ok(label, condition):
     print(("  ok  " if condition else "  XX  ") + label)
 
 
+def idle(app, assistant, seconds=60.0):
+    """Wait, by the clock, until the assistant has nothing in hand.
+
+    Not by counting event loops: a fixed count runs out in microseconds on a
+    busy machine, which is exactly when the work takes longest - it passed
+    here and failed on a build server."""
+    import time
+    deadline = time.monotonic() + float(seconds)
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if not assistant.is_busy():
+            break
+        time.sleep(0.01)
+    app.processEvents()
+    return not assistant.is_busy()
+
+
 def _paired(names):
     """Whether model discovery would pair these file names up."""
     from annotex.core.ai.sam import _family, _role
@@ -253,10 +270,7 @@ def main():
     window.ai().set_model(encoder, decoder, "fake")
     window.set_tool(BOX_AI)
     ok("the AI tool turns on", window.canvas.tool == BOX_AI)
-    for _ in range(200):
-        app.processEvents()
-        if not window.ai().is_busy():
-            break
+    idle(app, window.ai())
     ok("the image is prepared in the background", not window.ai().is_busy())
 
     window.canvas._add_ai_point(QPointF(160, 120), positive=True)
@@ -284,10 +298,7 @@ def main():
     window.next_image()
     app.processEvents()
     ok("the AI tool stays on across images", window.canvas.tool == BOX_AI)
-    for _ in range(200):
-        app.processEvents()
-        if not window.ai().is_busy():
-            break
+    idle(app, window.ai())
     window.canvas._add_ai_point(QPointF(100, 100), positive=True)
     app.processEvents()
     ok("the next image is prepared too", window.canvas.ai_preview is not None)
@@ -418,10 +429,16 @@ def main():
     window.ai().set_model(corrupt, decoder, "corrupt")
     window._ai_offered = True
     window.enter_ai_tool()
-    for _ in range(200):
+    # By the clock: a fixed count of event loops runs out before a slow
+    # machine has even tried to open the model.
+    import time as _clock
+    _deadline = _clock.monotonic() + 60.0
+    while _clock.monotonic() < _deadline:
         app.processEvents()
         if not window.ai().is_busy():
             break
+        _clock.sleep(0.01)
+    app.processEvents()
     ok("a corrupt model says so instead of crashing",
        "not a model" in window.status_label.text().lower()
        or "could not be opened" in window.status_label.text().lower()
@@ -510,10 +527,7 @@ def main():
         again.deleteLater()
         window._ai_offered = True
         ok("and the AI tool turns on with it", window.enter_ai_tool())
-        for _ in range(200):
-            app.processEvents()
-            if not window.ai().is_busy():
-                break
+        idle(app, window.ai())
     finally:
         catalog.CATALOG = real_catalog
         server.shutdown()
@@ -533,10 +547,7 @@ def main():
     shapes.set_current_class("leaf")
     shapes.ai().set_model(encoder, decoder, "fake")
     shapes.set_tool(SHAPE_AI)
-    for _ in range(200):
-        app.processEvents()
-        if not shapes.ai().is_busy():
-            break
+    idle(app, shapes.ai())
     shapes.canvas._add_ai_point(QPointF(160, 120), positive=True)
     app.processEvents()
     ok("a click proposes an outline", len(shapes.canvas.ai_preview or []) >= 3)

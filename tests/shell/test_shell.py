@@ -12,14 +12,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 SANDBOX = tempfile.mkdtemp(prefix="annotex_shell_")
-os.environ["HOME"] = SANDBOX
+os.environ["HOME"] = os.environ["USERPROFILE"] = SANDBOX
+os.environ["APPDATA"] = os.path.join(SANDBOX, "AppData", "Roaming")
+os.environ["LOCALAPPDATA"] = os.path.join(SANDBOX, "AppData", "Local")
 os.environ["XDG_CONFIG_HOME"] = os.path.join(SANDBOX, "config")
 # Each tool shows a one-time welcome tour; mark it seen so nothing modal
-# blocks a headless run.
-for sub in ("roi_studio", os.path.join("annotex", "labelimg")):
-    os.makedirs(os.path.join(SANDBOX, "config", sub), exist_ok=True)
-    with open(os.path.join(SANDBOX, "config", sub, "settings.json"), "w") as handle:
-        handle.write('{"first_run_done": true}')
+# blocks a headless run.  Through the tools' own settings, not a path written
+# out by hand: settings live in ~/.config on Linux, AppData on Windows and
+# ~/Library/Application Support on macOS, and a hand-written Linux path left
+# the welcome waiting for a click on a Mac.
+from annotex.apps.labelimg.config import Settings as _LabelImgSettings  # noqa: E402
+from annotex.apps.roi.config import Settings as _RoiSettings            # noqa: E402
+for _settings in (_LabelImgSettings(), _RoiSettings()):
+    _settings.set("first_run_done", True)
 OUT = os.environ.get("ANNOTEX_SHOT_DIR", "")
 
 from PySide6.QtGui import QColor, QPixmap                            # noqa: E402
