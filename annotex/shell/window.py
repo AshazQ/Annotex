@@ -463,6 +463,11 @@ class ShellWindow(QMainWindow):
                     ("last_image", "active_seconds", "view", "tool") if name in state})
             except Exception:
                 pass
+        self._drop_page(tool_id, page)
+        return True
+
+    def _drop_page(self, tool_id, page) -> None:
+        """Take a tool that has already closed out of the window."""
         was_current = self.stack.currentWidget() is page
         self.pages.pop(tool_id, None)
         self.stack.removeWidget(page)
@@ -477,8 +482,13 @@ class ShellWindow(QMainWindow):
             else:
                 self.stack.setCurrentWidget(self.pages[remaining])
                 self.settings.set("last_tool", remaining)
+                activated = getattr(self.pages[remaining], "tool_activated", None)
+                if activated is not None:
+                    try:
+                        activated()
+                    except Exception:
+                        pass
         self._sync_tabs()
-        return True
 
     def close_current_tool(self) -> bool:
         current = self.current_tool_id()
@@ -840,14 +850,22 @@ class ShellWindow(QMainWindow):
         # while they are all still here to ask.
         self._remember_open_tools()
         self._checkpoint_sessions(closing=True)
-        for page in list(self.pages.values()):
+        closed = []
+        for tool_id, page in list(self.pages.items()):
             closer = getattr(page, "tool_close", None)
             try:
                 if closer is not None and not closer():
+                    # Quitting stops here - but the tools before this one have
+                    # already saved, let go of their folders and shut down.
+                    # Left in place they would look open and not be, so they
+                    # go the way closing their tab takes them.
+                    for done_id, done_page in closed:
+                        self._drop_page(done_id, done_page)
                     event.ignore()
                     return
             except Exception:
-                continue
+                pass
+            closed.append((tool_id, page))
         try:
             self._session_timer.stop()
         except Exception:

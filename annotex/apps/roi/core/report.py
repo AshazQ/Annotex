@@ -77,8 +77,9 @@ def build_stats(rows, image_files=None, folder=""):
             entry["status"] = "roi"
             width = entry["width"] or 0
             height = entry["height"] or 0
-            if width and height:
-                area = sum(geo.polygon_area(p) for p in polys)
+            pixels = geo.parse_multi_polys(row.get("pixel_coords", ""))
+            if width and height and pixels:
+                area = sum(geo.polygon_area(p) for p in pixels)
                 entry["coverage"] = min(100.0, 100.0 * area / float(width * height))
             elif polys:
                 # normalised-only rows still give a fraction of the frame

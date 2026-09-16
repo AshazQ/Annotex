@@ -621,11 +621,29 @@ class Canvas(ImageViewport):
             return
         w, h = self.image_size
         targets = self.selection or {self._drag_index}
+        dx, dy = self._limit_shift([self._drag_shapes[i] for i in targets
+                                    if 0 <= i < len(self._drag_shapes)], dx, dy)
         for i in targets:
             if 0 <= i < len(self.shapes) and i < len(self._drag_shapes):
                 self.shapes[i] = self._drag_shapes[i].translated(dx, dy, w, h)
         self._drag_moved = True
         self.update()
+
+    def _limit_shift(self, shapes, dx, dy):
+        """(dx, dy) cut down so these shapes stop at the image edge together.
+
+        Clamping each point on its own instead squashed an ROI flat against
+        the border as soon as it was pushed there."""
+        w, h = self.image_size
+        shapes = [s for s in shapes if s.points]
+        if not shapes or not w or not h:
+            return dx, dy
+        left = min(s.bounds[0] for s in shapes)
+        top = min(s.bounds[1] for s in shapes)
+        right = max(s.bounds[2] for s in shapes)
+        bottom = max(s.bounds[3] for s in shapes)
+        return (geo.clamp(dx, min(0, -left), max(0, (w - 1) - right)),
+                geo.clamp(dy, min(0, -top), max(0, (h - 1) - bottom)))
 
     def _resize_box(self, pos: QPointF) -> None:
         if not (0 <= self._drag_index < len(self.shapes)) or not self._drag_bounds:
@@ -879,6 +897,12 @@ class Canvas(ImageViewport):
         if not self.selection:
             self.statusMessage.emit("Select an ROI first", "warning")
             return False
+        room = MAX_POLYS_PER_IMAGE - len(self.shapes)
+        if room < len(self.selection):
+            self.statusMessage.emit(
+                "This image can hold %d ROIs - there is room for %d more"
+                % (MAX_POLYS_PER_IMAGE, max(0, room)), "warning")
+            return False
         width, height = self.image_size
         shift = max(8, int(round(min(width or 100, height or 100) * 0.02)))
         added = []
@@ -912,6 +936,9 @@ class Canvas(ImageViewport):
             self.statusMessage.emit("Select an ROI first", "warning")
             return False
         width, height = self.image_size
+        dx, dy = self._limit_shift(self.selected_shapes(), dx, dy)
+        if not dx and not dy:
+            return False                     # already against the edge
         for i in sorted(self.selection):
             self.shapes[i] = self.shapes[i].translated(dx, dy, width, height)
         self.shapesChanged.emit("Nudge ROI")
