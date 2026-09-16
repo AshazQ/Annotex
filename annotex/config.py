@@ -22,6 +22,19 @@ SUITE_SLUG = "annotex"
 SUITE_VERSION = "1.0.0"
 SUITE_TAGLINE = "Annotation and review tools"
 
+# What Annotex does when it starts.  Home has always been the answer and
+# stays the default; the other two need a session to restore, so they fall
+# back to Home when there is nothing to reopen.
+STARTUP_HOME = "home"
+STARTUP_LAST = "last"
+STARTUP_ALL = "all"
+STARTUP_CHOICES = ((STARTUP_HOME, "Home",
+                    "The dashboard, with Continue for where you left off"),
+                   (STARTUP_LAST, "The last tool I used",
+                    "Straight back into it, with its folder and image"),
+                   (STARTUP_ALL, "Everything I had open",
+                    "Every tool from last time, in its own tab"))
+
 
 # ══════════════════════════════════════════════════════════════
 # PATHS
@@ -140,7 +153,10 @@ class JsonSettings:
 SHELL_DEFAULTS = {
     "theme": "dark",                 # dark | light | system
     "last_tool": "",
-    "reopen_last_tool": False,
+    # What a start looks like.  This replaces reopen_last_tool, which was
+    # declared here and read nowhere, so nothing was ever reopened.
+    "startup": STARTUP_HOME,         # see STARTUP_CHOICES below
+    "offer_recovery": True,          # offer back a run that did not finish
     "window_geometry": "",
     "ui_scale": "auto",              # "auto" or a factor such as 0.9 - see interface_factor
     "auto_scale": 1.0,               # what "auto" worked out on the last screen used

@@ -25,13 +25,20 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QFrame, 
 from ..ui import style
 from ..ui import design
 from ..ui.dialogs import messages
-from ..config import SUITE_NAME, ShellSettings
+from ..config import (STARTUP_ALL, STARTUP_HOME, STARTUP_LAST, SUITE_NAME,
+                      ShellSettings)
+from ..core.sessions import SessionStore
 from ..ui import icons
 from ..ui.dialogs.common import Dialog
 from ..ui.jobs import JobManager, JobQueuePanel
 from ..ui.palette import install_theme, resolve_theme, toggled_setting, with_tool
 from . import registry
 from .home import HomePage
+
+# How often every open tool is asked where it has got to.  The same twenty
+# seconds the labelling tools already autosave on, so a checkpoint costs
+# nothing that was not already being paid.
+SESSION_CHECKPOINT_MS = 20 * 1000
 
 
 class JobsDialog(Dialog):
@@ -92,6 +99,7 @@ class ShellWindow(QMainWindow):
         self.tools = list(tools if tools is not None else registry.TOOLS)
         self.pages = {}
         self.jobs = JobManager(self)
+        self.sessions = SessionStore()
         self.theme_setting = str(self.settings.get("theme", "dark") or "dark")
         self.theme = resolve_theme(self.theme_setting, app)
 
@@ -114,6 +122,7 @@ class ShellWindow(QMainWindow):
         self.home.folderRequested.connect(self._open_tool_folder)
         self.home.forgetRequested.connect(self.forget_folder)
         self.home.themeToggleRequested.connect(self.toggle_theme)
+        self.home.sessionsRequested.connect(self.show_sessions)
         self.stack.addWidget(self.home)
 
         self.jobs.jobAdded.connect(lambda _job: self._sync_jobs())
@@ -126,6 +135,15 @@ class ShellWindow(QMainWindow):
         self._sync_tabs()
         self._sync_jobs()
         QTimer.singleShot(0, self._measure_screen)
+
+        # Where every tool has got to, written down every so often.  Asking
+        # the tools on a timer catches a folder opened any way at all -
+        # through Home, the tool's own browse button, the command line - and
+        # means a run cut short by a power cut still left a usable record.
+        self._session_timer = QTimer(self)
+        self._session_timer.setInterval(SESSION_CHECKPOINT_MS)
+        self._session_timer.timeout.connect(self._checkpoint_sessions)
+        self._session_timer.start()
 
     # ══════════════════════════════════════════════════════
     # LAYOUT
@@ -409,6 +427,12 @@ class ShellWindow(QMainWindow):
                 spec.forget(folder)
             except Exception:
                 pass
+        # Continue is built from the sessions now, so a folder removed from
+        # the recent list would otherwise stay on Home regardless.
+        try:
+            self.sessions.forget(tool_id, folder)
+        except Exception:
+            pass
         self.home.refresh()
 
     def close_tool(self, tool_id) -> bool:
@@ -421,6 +445,9 @@ class ShellWindow(QMainWindow):
         if self.current_tool_id() == tool_id and not self._leave_current():
             self._sync_tabs()
             return False
+        # Written down before the tool is asked to close, while it still
+        # knows which image it was on.
+        found = self._page_session(page)
         closer = getattr(page, "tool_close", None)
         try:
             if closer is not None and not closer():
@@ -428,6 +455,14 @@ class ShellWindow(QMainWindow):
                 return False
         except Exception:
             pass
+        if found is not None:
+            folder, state = found
+            try:
+                self.sessions.end(tool_id, folder, **{
+                    name: state[name] for name in
+                    ("last_image", "active_seconds", "view", "tool") if name in state})
+            except Exception:
+                pass
         was_current = self.stack.currentWidget() is page
         self.pages.pop(tool_id, None)
         self.stack.removeWidget(page)
@@ -553,6 +588,167 @@ class ShellWindow(QMainWindow):
         from .style_guide import StyleGuideDialog
         StyleGuideDialog(self, self.theme).exec()
 
+    # ══════════════════════════════════════════════════════
+    # SESSIONS
+    # ══════════════════════════════════════════════════════
+    def _page_session(self, page):
+        """What a tool says about where it has got to, or None.
+
+        A tool that has not been taught to answer keeps working exactly as
+        it did; it simply has nothing to restore."""
+        asker = getattr(page, "session_state", None)
+        if asker is None:
+            return None
+        try:
+            state = asker()
+        except Exception:
+            return None
+        if not isinstance(state, dict):
+            return None
+        folder = str(state.get("folder") or "")
+        return (folder, state) if folder and os.path.isdir(folder) else None
+
+    def _checkpoint_sessions(self, closing: bool = False) -> None:
+        for tool_id, page in list(self.pages.items()):
+            found = self._page_session(page)
+            if found is None:
+                continue
+            folder, state = found
+            fields = {name: state[name] for name in
+                      ("last_image", "active_seconds", "view", "tool")
+                      if name in state}
+            try:
+                if closing:
+                    self.sessions.end(tool_id, folder, **fields)
+                else:
+                    self.sessions.update(tool_id, folder, **fields)
+            except Exception:
+                continue
+
+    def _remember_open_tools(self) -> None:
+        """Which tools were showing, so "everything I had open" can mean it.
+
+        The tool in front goes last, because restoring walks the list and
+        whatever is opened last is what ends up on screen."""
+        current = self.current_tool_id()
+        order = [t for t in self.pages if t != current]
+        if current:
+            order.append(current)
+        try:
+            self.sessions.set_open_tools(order)
+        except Exception:
+            pass
+
+    def restore_startup(self) -> str:
+        """Open what the Startup setting asks for.  Returns what it did.
+
+        Called once, after the window is up, and only when no tool was named
+        on the command line - an explicit request always wins."""
+        try:
+            choice = str(self.settings.get("startup", STARTUP_HOME) or STARTUP_HOME)
+        except Exception:
+            choice = STARTUP_HOME
+        if choice == STARTUP_ALL:
+            wanted = [t for t in self._stored_open_tools()
+                      if any(s.id == t for s in self.tools)]
+        elif choice == STARTUP_LAST:
+            last = str(self.settings.get("last_tool", "") or "")
+            wanted = [last] if last and any(s.id == last for s in self.tools) else []
+        else:
+            wanted = []
+        opened = []
+        for tool_id in wanted:
+            if self._resume_tool(tool_id):
+                opened.append(tool_id)
+        if not opened:
+            self.go_home()
+            return STARTUP_HOME
+        return choice
+
+    def _stored_open_tools(self):
+        try:
+            return self.sessions.open_tools()
+        except Exception:
+            return []
+
+    def _resume_tool(self, tool_id) -> bool:
+        """Reopen one tool with the folder and image it last had.
+
+        A folder that has gone - an unplugged drive, a batch that was
+        renamed - costs a line in the status bar, not a wall of errors, and
+        the tool still opens so somebody can pick another one."""
+        record = None
+        try:
+            found = self.sessions.recent(limit=1, tool_ids=[tool_id])
+            record = found[0] if found else None
+        except Exception:
+            record = None
+        folder = record.folder if record is not None else ""
+        page = self.open_tool(tool_id, folder or None)
+        if page is None:
+            return False
+        if record is not None and folder:
+            self._restore_into(page, record)
+        return True
+
+    @staticmethod
+    def _restore_into(page, record) -> None:
+        """Hand a tool back the rest of its session, once its folder is open.
+
+        Only the rest: the folder itself went through open_tool, so the lock
+        and the read-only handling are the ones that have always run."""
+        restore = getattr(page, "restore_session", None)
+        if restore is None:
+            return
+        try:
+            restore({"folder": record.folder, "last_image": record.last_image,
+                     "view": dict(record.view), "tool": dict(record.tool)})
+        except Exception:
+            pass
+
+    def offer_recovery(self) -> bool:
+        """Offer back a run that did not finish.  True if something reopened.
+
+        A record with no closing time is one whose window went away without
+        being closed: a crash, a power cut, a process killed.  Somebody who
+        has just lost a window wants to be asked, once, about the folder
+        they were in - not to find Home and have to remember."""
+        if not self.settings.get("offer_recovery", True):
+            return False
+        try:
+            unfinished = [s for s in self.sessions.unfinished()
+                          if not any(s.tool_id == t for t in self.pages)]
+        except Exception:
+            return False
+        if not unfinished:
+            return False
+        record = unfinished[0]
+        spec = next((s for s in self.tools if s.id == record.tool_id), None)
+        if spec is None:
+            return False
+        where = record.last_image or record.progress_text() or "that folder"
+        answer = messages.ask(
+            self, "Pick up where you left off?",
+            "%s closed unexpectedly while you were working in %s.\n\nYou were on %s.  "
+            "Nothing on disk was lost - open it again?" % (SUITE_NAME, record.name, where),
+            confirm="Open it", cancel="Not now")
+        if not answer:
+            # Asked and declined: close the record so the same folder is not
+            # offered every single start from now on.
+            try:
+                self.sessions.end(record.tool_id, record.folder)
+            except Exception:
+                pass
+            return False
+        return self._resume_tool(record.tool_id)
+
+    def show_sessions(self) -> None:
+        from .sessions_dialog import SessionsDialog
+        dialog = SessionsDialog(self, self.sessions, self.tools, self.settings)
+        dialog.resumeRequested.connect(self._open_tool_folder)
+        dialog.exec()
+        self.home.refresh()
+
     def show_diagnostics(self) -> None:
         """What this machine has, and where it writes things down.
 
@@ -640,6 +836,10 @@ class ShellWindow(QMainWindow):
                 return
             self.jobs.cancel_all()
             self.jobs.wait(20)
+        # Which tools were open, and where each had got to, written down
+        # while they are all still here to ask.
+        self._remember_open_tools()
+        self._checkpoint_sessions(closing=True)
         for page in list(self.pages.values()):
             closer = getattr(page, "tool_close", None)
             try:
@@ -648,6 +848,10 @@ class ShellWindow(QMainWindow):
                     return
             except Exception:
                 continue
+        try:
+            self._session_timer.stop()
+        except Exception:
+            pass
         try:
             self.settings.set("window_geometry", bytes(self.saveGeometry().toBase64()).decode("ascii"))
         except Exception:

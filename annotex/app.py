@@ -369,8 +369,21 @@ def run(argv=None) -> int:
     if args.tool:
         folder = args.folder if args.folder and os.path.isdir(args.folder) else None
         window.open_tool(args.tool, folder)
-    elif args.folder:
-        print("A folder was given without --tool; opening the Home dashboard.")
+    else:
+        if args.folder:
+            print("A folder was given without --tool; opening the Home dashboard.")
+        # After the window is up, so a dialog has something to sit over and
+        # a slow folder does not hold back the first paint.  An explicit
+        # --tool always wins over both.
+        from PySide6.QtCore import QTimer
+
+        def _start():
+            try:
+                if not window.offer_recovery():
+                    window.restore_startup()
+            except Exception:
+                pass
+        QTimer.singleShot(0, _start)
     return app.exec()
 
 

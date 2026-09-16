@@ -1,17 +1,26 @@
 """What you were last working on, for Home's "Continue" strip.  No Qt.
 
-The annotation tools remember their recent folders; this module orders them
-by when each tool was last used and measures how far along each folder is.
+The order comes from the session store, which knows when each folder was
+last actually worked in.  It used to come from the modification time of the
+tool's settings file, which gives every folder in a tool the same answer
+and gets the order wrong the moment somebody returns to an older one.
+
+A machine with no session store yet - anybody upgrading - still gets its
+Continue strip, built from the recent-folder lists the tools have always
+kept.  Those have no timestamps, so the order is the tools' own; the first
+run in each folder replaces the guess with the real thing.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class Session:
+    """One recent folder, as Home draws it."""
+
     tool_id: str
     folder: str
     stamp: float = 0.0
@@ -19,39 +28,57 @@ class Session:
     done: int | None = None       # None = this tool does not count per image
     thumb: str = ""
     measured: bool = False
+    # From the session store, and empty for a folder it has never seen.
+    last_image: str = ""
+    active_seconds: float = 0.0
+    elsewhere: str = ""           # named when the record is another machine's
+    crashed: bool = False
+    view: dict = field(default_factory=dict)
+    tool: dict = field(default_factory=dict)
 
     @property
     def name(self) -> str:
         return os.path.basename(os.path.normpath(self.folder)) or self.folder
 
-
-def _settings_file(tool_id):
-    try:
-        if tool_id == "roi":
-            from ..apps.roi.config import settings_path
-            return str(settings_path())
-        if tool_id == "labelimg":
-            from ..apps.labelimg.config import settings_dir
-            return str(settings_dir() / "settings.json")
-        if tool_id == "shapes":
-            from ..apps.shapes.config import settings_dir
-            return str(settings_dir() / "settings.json")
-    except Exception:
-        return ""
-    return ""
+    def worked_text(self) -> str:
+        total = int(self.active_seconds)
+        hours, minutes = divmod(total // 60, 60)
+        if hours:
+            return "%dh %02dm" % (hours, minutes)
+        return "%dm" % minutes if minutes else ""
 
 
-def _stamp(tool_id) -> float:
-    path = _settings_file(tool_id)
-    try:
-        return os.path.getmtime(path) if path else 0.0
-    except OSError:
-        return 0.0
+def _store():
+    from ..core.sessions import SessionStore
+    return SessionStore()
+
+
+def from_record(record) -> Session:
+    """A stored record as the strip's own view of it."""
+    from ..core.sessions import machine_label
+    return Session(record.tool_id, record.folder,
+                   total=record.images_total, done=record.images_done,
+                   last_image=record.last_image,
+                   active_seconds=record.active_seconds,
+                   elsewhere=machine_label(record.machine),
+                   crashed=record.crashed,
+                   view=dict(record.view), tool=dict(record.tool))
 
 
 def recent_sessions(tools, limit=3):
-    """The most recent (tool, folder) pairs across every tool that keeps a
-    recent-folder list, newest first."""
+    """The most recent (tool, folder) pairs across every tool, newest first."""
+    ids = [spec.id for spec in tools if spec.recent is not None]
+    try:
+        records = _store().recent(limit=limit, tool_ids=ids)
+    except Exception:
+        records = []
+    if records:
+        return [from_record(record) for record in records]
+    return _from_recent_folders(tools, limit)
+
+
+def _from_recent_folders(tools, limit):
+    """What Home showed before there was a session store."""
     sessions = []
     for spec in tools:
         if spec.recent is None:
@@ -60,10 +87,8 @@ def recent_sessions(tools, limit=3):
             folders = [f for f in (spec.recent() or []) if os.path.isdir(f)]
         except Exception:
             continue
-        stamp = _stamp(spec.id)
         for position, folder in enumerate(folders[:2]):
-            sessions.append(Session(spec.id, folder, stamp - position * 1000.0))
-    sessions.sort(key=lambda s: -s.stamp)
+            sessions.append(Session(spec.id, folder, -float(position)))
     seen, out = set(), []
     for session in sessions:
         key = (session.tool_id, os.path.normcase(os.path.abspath(session.folder)))
@@ -73,8 +98,12 @@ def recent_sessions(tools, limit=3):
     return out[:limit]
 
 
-def measure(session) -> Session:
-    """Count the images and how many already have an annotation."""
+def measure(session, remember=True) -> Session:
+    """Count the images and how many already have an annotation.
+
+    The counts go back into the store, so the next start can show them
+    before it has finished counting - which on a folder of several thousand
+    images is the difference between a number and a blank."""
     folder = session.folder
     if session.tool_id == "shapes":
         from ..apps.shapes.core.store import annotation_path, scan_images
@@ -95,4 +124,12 @@ def measure(session) -> Session:
     session.total = len(rels)
     session.thumb = os.path.join(folder, rels[0]) if rels else ""
     session.measured = True
+    if remember:
+        try:
+            # Noted, not updated: counting a folder is not working in it, and
+            # must not leave a finished session looking like a crash.
+            _store().note(session.tool_id, folder, images_total=session.total,
+                          images_done=session.done)
+        except Exception:
+            pass
     return session

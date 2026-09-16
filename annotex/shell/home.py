@@ -457,6 +457,7 @@ class HomePage(QWidget):
     folderRequested = Signal(str, str)
     forgetRequested = Signal(str, str)
     themeToggleRequested = Signal()
+    sessionsRequested = Signal()
     _measured = Signal(object)
 
     def __init__(self, tools, parent=None):
@@ -513,7 +514,17 @@ class HomePage(QWidget):
         continue_layout = QVBoxLayout(self.continue_section)
         design.margins(continue_layout, "s", "0", "0", "0")
         continue_layout.setSpacing(design.SPACE["s"])
-        continue_layout.addWidget(section_label("Continue where you left off"))
+        heading = QHBoxLayout()
+        heading.addWidget(section_label("Continue where you left off"))
+        heading.addStretch(1)
+        # The strip shows three; everything else, and what a start should
+        # look like, is one click away rather than nowhere.
+        self.sessions_link = QPushButton("All sessions…")
+        self.sessions_link.setObjectName("Link")
+        self.sessions_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sessions_link.clicked.connect(self.sessionsRequested.emit)
+        heading.addWidget(self.sessions_link)
+        continue_layout.addLayout(heading)
         self.continue_row = QHBoxLayout()
         self.continue_row.setSpacing(design.SPACE["m"])
         continue_layout.addLayout(self.continue_row)

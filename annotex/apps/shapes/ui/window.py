@@ -27,6 +27,7 @@ from annotex.apps.labelimg.ui.panels import ActiveClassChip, ClassPalette
 from annotex.core import clipboard
 from annotex.core.history import History
 from annotex.core.io_safe import FolderLock, folder_is_writable
+from annotex.core.session import SessionTimer
 from annotex.ui import icons
 from annotex.ui.dialogs.ai_dialog import AiModelDialog
 from annotex.ui.dialogs.common import Dialog
@@ -77,6 +78,9 @@ class ShapesWindow(QMainWindow):
             settings.data["theme"] = host.theme_setting
         self.theme = resolve_theme(settings.get("theme", "dark"), app, tool="shapes")
 
+        # Counts only time something was actually happening, so "how long
+        # in this folder" is work and not a window left open overnight.
+        self.timer = SessionTimer()
         self.folder = ""
         self.images = []
         self.index = 0
@@ -945,6 +949,10 @@ class ShapesWindow(QMainWindow):
     def _after_load(self) -> None:
         if self.canvas.tool == T_AI and not self.enter_ai_tool():
             self.set_tool(T_SELECT)
+        # Reaching an image is the unit of work here, so it is what the
+        # clock counts - and it stops counting after a couple of quiet
+        # minutes, so lunch is not labelling.
+        self.timer.count_image(len(self.canvas.shapes) if self.image_ok else 0)
         self.filmstrip.set_index(self.index)
         self.verify_button.setChecked(self.verified)
         self.act("verify").setChecked(self.verified)
@@ -1660,6 +1668,42 @@ class ShapesWindow(QMainWindow):
 
     def tool_open(self, folder) -> None:
         self.open_folder(folder)
+
+    # ══════════════════════════════════════════════════════
+    # SESSION
+    # ══════════════════════════════════════════════════════
+    def session_state(self) -> dict:
+        """Where this tool has got to, for the shell to write down.
+
+        Asked on a timer and again on the way out, so it has to be cheap and
+        it has to work at any moment - including before a folder is open."""
+        return {"folder": self.folder,
+                "last_image": self.current_rel() or "",
+                "active_seconds": self.timer.active_seconds,
+                "view": {"side_collapsed": bool(self.side.is_collapsed())},
+                "tool": {"current_class": getattr(self, "current_class", "") or ""}}
+
+    def restore_session(self, state) -> None:
+        """Pick up a folder where it was left.
+
+        The folder itself has already been opened through the usual path, so
+        its lock and its read-only handling are the ones that always run;
+        this only has to put the view back."""
+        state = state or {}
+        view = state.get("view") or {}
+        try:
+            if bool(view.get("side_collapsed")) != bool(self.side.is_collapsed()):
+                self.side.toggle()
+        except Exception:
+            pass
+        rel = str(state.get("last_image") or "")
+        # An image that has since been deleted or renamed is not an error:
+        # the folder still opens, on the first image, as it always did.
+        if rel and rel in self.images:
+            try:
+                self.go_to_index(self.images.index(rel))
+            except Exception:
+                pass
 
     def tool_close(self) -> bool:
         if getattr(self, "_closed", False):

@@ -1984,6 +1984,42 @@ class MainWindow(QMainWindow):
     def tool_open(self, folder) -> None:
         self.open_folder(folder)
 
+    # ══════════════════════════════════════════════════════
+    # SESSION
+    # ══════════════════════════════════════════════════════
+    def session_state(self) -> dict:
+        """Where this tool has got to, for the shell to write down.
+
+        Asked on a timer and again on the way out, so it has to be cheap and
+        it has to work at any moment - including before a batch is open."""
+        return {"folder": self.folder,
+                "last_image": self.current_name() or "",
+                "active_seconds": self.timer.active_seconds,
+                "view": {"side_collapsed": bool(self.side.is_collapsed())},
+                "tool": {}}
+
+    def restore_session(self, state) -> None:
+        """Pick up a batch where it was left.
+
+        The folder itself has already been opened through the usual path, so
+        its lock and its read-only handling are the ones that always run;
+        this only has to put the view back."""
+        state = state or {}
+        view = state.get("view") or {}
+        try:
+            if bool(view.get("side_collapsed")) != bool(self.side.is_collapsed()):
+                self.side.toggle()
+        except Exception:
+            pass
+        name = str(state.get("last_image") or "")
+        # An image that has since been deleted or renamed is not an error:
+        # the batch still opens, on the first image, as it always did.
+        if name and name in self.image_files:
+            try:
+                self.go_to_name(name)
+            except Exception:
+                pass
+
     def tool_close(self) -> bool:
         """The application is closing.  False keeps it open."""
         try:
