@@ -1,4 +1,4 @@
-"""Image Sorter: by hand with number keys, by rule, or with an ONNX model."""
+"""Image Sorter: by hand with number keys, by rule, with an ONNX model, or by example."""
 
 from __future__ import annotations
 
@@ -29,11 +29,14 @@ KEYS = [str(i) for i in range(1, 10)]
 class SorterPage(MediaToolPage):
     TOOL_ID = "sorter"
     TOOL_NAME = "Image Sorter"
-    TAGLINE = "Copy images into folders - by hand, by rule, or with a model"
+    TAGLINE = "Copy images into folders - by hand, by rule, with a model, or by example"
     MARK = "box"
     DEFAULTS = {"recursive": True, "folders": ["keep", "reject", "", "", "", "", "", "", ""],
                 "rule": "name_tokens", "tokens": 2, "regex": r"cam(\d+)", "granularity": "day",
-                "threshold": 50, "multiple": "top", "imagenet": False, "last_source": ""}
+                "threshold": 50, "multiple": "top", "imagenet": False, "last_source": "",
+                "ref_folder": "", "ref_embedder": "classic", "ref_model": "",
+                "ref_combine": "nearest", "ref_all": False, "ref_threshold": 70,
+                "ref_margin": 3}
 
     def build(self) -> None:
         self.source = ""
@@ -86,6 +89,9 @@ class SorterPage(MediaToolPage):
         self.tabs.addTab(self._manual_tab(), "By hand")
         self.tabs.addTab(self._rules_tab(), "By rule")
         self.tabs.addTab(self._ai_tab(), "With a model (ONNX)")
+        from .reference_tab import ReferenceTab
+        self.reference_tab = ReferenceTab(self)
+        self.tabs.addTab(self.reference_tab, "By example")
         top_layout.addWidget(self.tabs, 1)
         self.splitter.addWidget(top)
 
@@ -587,6 +593,10 @@ class SorterPage(MediaToolPage):
         self.ai_run.setText("Sort %d image(s)" % len(self.images) if has_images else "Sort")
         for button in (self.prev_button, self.next_button):
             button.setEnabled(has_images)
+        tab = getattr(self, "reference_tab", None)
+        if tab is not None:
+            # A new folder of images makes any comparison out of date.
+            tab._invalidate()
 
     def tool_activated(self) -> None:
         self.view.setFocus()

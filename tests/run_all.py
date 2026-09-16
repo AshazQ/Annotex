@@ -28,6 +28,7 @@ SUITES = [("roi core", "roi/test_core.py"),
           ("packaged build", "robust/test_frozen.py"),
           ("random operations", "robust/test_monkey.py"),
           ("media gui", "media/test_gui.py"),
+          ("sort by example", "media/test_reference.py"),
           ("shell", "shell/test_shell.py"),
           ("sessions", "shell/test_sessions.py")]
 

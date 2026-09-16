@@ -15,7 +15,7 @@ background job queue and the same safe-saving rules.
 | Video | **Video Converter** | MP4 H.264 / H.265, WebM VP9, MKV, AVI; resolution, frame rate, quality or target size. |
 | Video | **Video Merger** | Join clips in order; lossless when they match, converted to a common format when they don't. |
 | Images | **Image Converter** | JPEG / PNG / WebP / BMP / TIFF; resize, quality, strip EXIF, rename patterns. |
-| Images | **Image Sorter** | Copy images into folders with keys 1–9, by rule, or with an ONNX model; every run can be undone. |
+| Images | **Image Sorter** | Copy images into folders with keys 1–9, by rule, with an ONNX model, or by example; every run can be undone. |
 
 Built with PySide6 (Qt 6). Runs on Windows, macOS and Linux from the same
 source; ffmpeg is bundled through `imageio-ffmpeg`, so nothing else needs
@@ -183,6 +183,20 @@ default). Sorting **always copies**, and every copy is logged in
   names (or clear one to ignore that class), choose whether a detector image
   with several classes is copied to the best one or to all, and **test on the
   image shown** before sorting. Needs `onnxruntime` (`python bootstrap.py --ai`).
+- **By example** - no training and no class list: make a folder with one
+  sub-folder per category and a few example pictures in each, then
+  **Compare**. Every image is scored against the examples (its closest one, or
+  their average), and the two sliders decide where it goes - below **Alike at
+  least** it goes to `_unmatched`, and too close to a second category to
+  `_unsure`. The sliders start where the examples themselves suggest, the
+  table lists the weakest matches first with a preview of each, and moving a
+  slider re-decides every image instantly without comparing again. Compare by
+  **how they look** (layout and colour; nothing to download - right for the
+  same scene, the same camera, near-duplicates) or by **what is in them**,
+  with any ONNX image model such as a CLIP or DINOv2 image encoder. Results
+  are cached, so comparing again after adding an example costs only that
+  example. Examples kept inside the folder being sorted are never sorted
+  themselves. Needs `numpy` (`python bootstrap.py --ai`).
 
 ---
 
