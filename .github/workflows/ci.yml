@@ -53,6 +53,18 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: python tests/run_all.py
 
+      # Whether a tool fits a small laptop screen depends on the fonts, and
+      # the offscreen platform above does not use the ones people have.  On
+      # Windows and macOS the runner has a real desktop, so the layout checks
+      # run again there with the platform's own fonts - that is the verdict
+      # that matters.  They run even when the step above failed.
+      - name: Layout, with this platform's own fonts
+        if: ${{ !cancelled() && runner.os != 'Linux' }}
+        env:
+          QT_QPA_PLATFORM: ${{ runner.os == 'Windows' && 'windows' || 'cocoa' }}
+          PYTHONIOENCODING: utf-8
+        run: python tests/run_all.py "workspace & display"
+
   package:
     name: Package
     needs: tests

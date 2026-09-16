@@ -27,6 +27,22 @@ sys.path.insert(0, ROOT)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 BASELINE = os.path.join(HERE, "design_baseline.json")
 
+# This opens real tool windows, so it gets a home of its own: it must not
+# write into the settings of whoever runs it, and on a machine where the
+# tools have never been opened their first-run welcome would otherwise wait
+# for a click that never comes.
+import tempfile                                                       # noqa: E402
+_HOME = tempfile.mkdtemp(prefix="annotex_design_")
+for _name in ("HOME", "USERPROFILE"):
+    os.environ[_name] = _HOME
+os.environ["APPDATA"] = os.path.join(_HOME, "AppData", "Roaming")
+os.environ["LOCALAPPDATA"] = os.path.join(_HOME, "AppData", "Local")
+os.environ["XDG_CONFIG_HOME"] = os.path.join(_HOME, ".config")
+from annotex.apps.labelimg.config import Settings as _LabelImgSettings  # noqa: E402
+from annotex.apps.roi.config import Settings as _RoiSettings            # noqa: E402
+for _settings in (_LabelImgSettings(), _RoiSettings()):
+    _settings.set("first_run_done", True)
+
 FAILS = []
 
 # Files whose job is to hold these values, or whose colours are data rather
