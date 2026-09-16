@@ -160,6 +160,13 @@ class ShellWindow(QMainWindow):
         return bar
 
     def _build_actions(self) -> None:
+        # Shell keys a tool is allowed to claim for itself.  A tool that binds
+        # the same key (ROI Studio and LabelImg Master use Ctrl+W to close the
+        # batch and Ctrl+1 to zoom) would otherwise never see it: the shell's
+        # ApplicationShortcut outranks the tool's WindowShortcut and swallows
+        # it silently.  _sync_shortcuts turns these off while such a tool is
+        # showing, so the tool's own key wins and everywhere else is unchanged.
+        self._yielding_actions = []
         for text, key, slot in (("Home", "Ctrl+Shift+H", self.go_home),
                                 ("Jobs", "Ctrl+J", self.show_jobs),
                                 ("Close tool", "Ctrl+W", self.close_current_tool)):
@@ -168,6 +175,8 @@ class ShellWindow(QMainWindow):
             action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
             action.triggered.connect(slot)
             self.addAction(action)
+            if key == "Ctrl+W":
+                self._yielding_actions.append(action)
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         quit_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -179,6 +188,7 @@ class ShellWindow(QMainWindow):
             action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
             action.triggered.connect(lambda _c=False, t=spec.id: self.open_tool(t))
             self.addAction(action)
+            self._yielding_actions.append(action)
         guide = QAction("Style guide", self)
         guide.setShortcut(QKeySequence("Ctrl+Alt+Shift+D"))
         guide.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -373,6 +383,24 @@ class ShellWindow(QMainWindow):
             tab.setChecked(tool_id == current)
         spec = next((s for s in self.tools if s.id == current), None)
         self.setWindowTitle("%s  —  %s" % (SUITE_NAME, spec.name) if spec else SUITE_NAME)
+        self._sync_shortcuts()
+
+    def _sync_shortcuts(self) -> None:
+        """Let the tool on show keep any shell key it binds itself.
+
+        A disabled action does not consume its shortcut, so the tool's own
+        action receives the key instead.  The tab and its close button call
+        straight into the shell, so nothing becomes unreachable by mouse."""
+        page = self.stack.currentWidget()
+        claimed = set()
+        if page is not None and page is not self.home:
+            for action in page.findChildren(QAction):
+                for sequence in action.shortcuts():
+                    text = sequence.toString()
+                    if text:
+                        claimed.add(text)
+        for action in getattr(self, "_yielding_actions", ()):
+            action.setEnabled(action.shortcut().toString() not in claimed)
 
     # ══════════════════════════════════════════════════════
     # JOBS

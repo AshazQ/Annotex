@@ -43,7 +43,7 @@ class SorterPage(MediaToolPage):
         self.model = None
         self.placed = {}                 # image -> set of folders (this session)
 
-        top, top_layout = self.card()
+        top, top_layout = self.scroll_card()
         source_row = QHBoxLayout()
         source_row.addWidget(section_label("Images from"))
         self.source_edit = QLineEdit("")

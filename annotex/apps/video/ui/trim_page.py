@@ -34,7 +34,7 @@ class TrimPage(VideoPage):
         left_layout.addWidget(self.make_file_list())
         self.splitter.addWidget(left)
 
-        centre, centre_layout = self.card()
+        centre, centre_layout = self.scroll_card()
         centre_layout.addWidget(self.make_player(), 3)
         marks = QHBoxLayout()
         self.start_button = QPushButton("Set start   I")
