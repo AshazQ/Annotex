@@ -57,7 +57,7 @@ class ReferenceTab(QWidget):
         settings = page.settings
 
         layout = QVBoxLayout(self)
-        design.margins(layout, "s", "0", "0", "0")
+        design.margins(layout, "m")
         self.missing = hint(embed.install_hint())
         layout.addWidget(self.missing)
 

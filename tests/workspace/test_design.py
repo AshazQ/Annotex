@@ -123,7 +123,7 @@ def main():
     names = set(re.findall(r"%\((\w+)\)s", style.TEMPLATE))
     values = design.stylesheet_values()
     theme_keys = set(next(iter(THEMES.values())))
-    unknown = names - set(values) - theme_keys - {"checkIcon", "radioIcon"}
+    unknown = names - set(values) - theme_keys - {"checkIcon", "radioIcon", "spinUpIcon", "spinDownIcon"}
     ok("every name the stylesheet uses is a design value or a theme colour", not unknown)
     if unknown:
         print("      unknown: %s" % ", ".join(sorted(unknown)))

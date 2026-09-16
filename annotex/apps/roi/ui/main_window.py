@@ -387,7 +387,8 @@ class MainWindow(QMainWindow):
 
         scroll.setWidget(holder)
         outer = QVBoxLayout(panel)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # Inset, so the scroll bar stays inside the panel's rounded corners.
+        design.margins(outer, "xs")
         outer.addWidget(scroll)
         return panel
 

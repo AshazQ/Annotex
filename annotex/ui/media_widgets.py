@@ -8,7 +8,7 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout,
                                QLabel, QListWidget, QListWidgetItem, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget)
@@ -303,7 +303,13 @@ class FrameView(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        painter.fillRect(self.rect(), self.void)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Rounded like every other surface, and the picture clipped to match.
+        frame = QPainterPath()
+        radius = design.RADIUS["m"]
+        frame.addRoundedRect(QRectF(self.rect()), radius, radius)
+        painter.setClipPath(frame)
+        painter.fillPath(frame, self.void)
         if self.image is None or self.image.isNull():
             painter.setPen(QColor("#6f7784"))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.message)

@@ -191,7 +191,7 @@ class SorterPage(MediaToolPage):
     def _manual_tab(self) -> QWidget:
         page = QWidget()
         layout = QHBoxLayout(page)
-        design.margins(layout, "s", "0", "0", "0")
+        design.margins(layout, "m")
         viewer = QVBoxLayout()
         self.view = FrameView()
         self.view.message = "Choose a folder to start"
@@ -332,7 +332,7 @@ class SorterPage(MediaToolPage):
     def _rules_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        design.margins(layout, "s", "0", "0", "0")
+        design.margins(layout, "m")
         self.rule = QComboBox()
         for key, label in sorter.RULES.items():
             self.rule.addItem(label, key)
@@ -435,7 +435,7 @@ class SorterPage(MediaToolPage):
     def _ai_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        design.margins(layout, "s", "0", "0", "0")
+        design.margins(layout, "m")
         self.ai_missing = hint(ai.INSTALL_HINT)
         layout.addWidget(self.ai_missing)
 

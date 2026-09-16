@@ -487,7 +487,7 @@ class LabelImgWindow(QMainWindow):
         foot.addLayout(buttons)
 
         outer = QVBoxLayout(panel)
-        outer.setContentsMargins(0, 0, 0, 0)
+        design.margins(outer, "xs")     # the scroll bar stays inside the rounded corners
         outer.setSpacing(0)
         outer.addWidget(scroll, 1)
         outer.addWidget(footer)

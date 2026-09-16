@@ -202,7 +202,9 @@ class MediaToolPage(QMainWindow):
         frame = QFrame()
         frame.setObjectName("Card")
         outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # Inset from the card's edge, so the scroll bar and anything scrolled
+        # past stay inside its rounded corners instead of squaring them off.
+        design.margins(outer, "xs")
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -212,6 +214,9 @@ class MediaToolPage(QMainWindow):
         design.margins(layout, "m")
         layout.setSpacing(12)
         scroll.setWidget(holder)
+        # The card shows through, corners and all.
+        holder.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
         outer.addWidget(scroll)
         self._option_cards.append((frame, holder, scroll))
         return frame, layout

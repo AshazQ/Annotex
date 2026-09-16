@@ -268,6 +268,9 @@ class JobQueuePanel(QWidget):
         self.list_layout.addWidget(self.empty)
         self.list_layout.addStretch(1)
         scroll.setWidget(holder)
+        # The card shows through, corners and all.
+        holder.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
         layout.addWidget(scroll, 1)
 
         manager.jobAdded.connect(self._added)

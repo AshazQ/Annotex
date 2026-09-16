@@ -32,6 +32,9 @@ QFrame#Toolbar {
 QFrame#Rail {
     background: %(surface)s; border: %(hairline)s solid %(border)s; border-radius: %(round_rail)s;
 }
+/* A scroll area shows what it sits on - a card, a panel, a dialog - rather
+   than painting a square of the window colour over that card's corners. */
+QScrollArea > QWidget#qt_scrollarea_viewport { background: transparent; }
 QScrollArea#RailScroll, QWidget#RailBody, QWidget#DialogBody { background: transparent; border: %(zero)s; }
 QFrame#RailSep, QFrame#Divider { background: %(border)s; border: %(zero)s; max-height: %(hairline)s; }
 QFrame#VDivider { background: %(border)s; border: %(zero)s; max-width: %(hairline)s; }
@@ -141,6 +144,28 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabl
     color: %(muted)s; background: %(surfaceAlt)s;
 }
 QComboBox::drop-down { border: %(zero)s; width: %(space_xl)s; }
+/* A number box's steppers: two quiet halves inside the field's own corner,
+   rather than the platform's square buttons drawn over its border. */
+QSpinBox, QDoubleSpinBox { padding-right: %(space_xl)s; }
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border; width: %(space_l)s; border: %(zero)s;
+    background: transparent; margin-right: %(space_xs)s; border-radius: %(radius_xs)s;
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-position: top right; margin-top: %(space_xxs)s;
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-position: bottom right; margin-bottom: %(space_xxs)s;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background: %(surfaceHover)s; }
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("%(spinUpIcon)s"); width: %(space_s)s; height: %(space_s)s;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("%(spinDownIcon)s"); width: %(space_s)s; height: %(space_s)s;
+}
 QComboBox QAbstractItemView {
     background: %(surface)s; border: %(hairline)s solid %(border)s; border-radius: %(radius_m)s;
     padding: %(space_xs)s; selection-background-color: %(accent)s; selection-color: %(onAccent)s;
@@ -204,6 +229,7 @@ QScrollBar::handle:horizontal {
 QScrollBar::handle:hover { background: %(borderStrong)s; }
 QScrollBar::add-line, QScrollBar::sub-line { height: %(zero)s; width: %(zero)s; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QAbstractScrollArea::corner { background: transparent; border: %(zero)s; }
 
 /* ── menus ──────────────────────────────────────────────── */
 QMenuBar { background: transparent; }
@@ -329,6 +355,8 @@ def build(theme: dict) -> str:
     values.update(sizes)
     values["checkIcon"] = _icon_url("check.svg")
     values["radioIcon"] = _icon_url("radio.svg")
+    values["spinUpIcon"] = _icon_url("spin_up.svg")
+    values["spinDownIcon"] = _icon_url("spin_down.svg")
     parts = [TEMPLATE % values]
     for tool in TOOL_HUES:
         tool_values = dict(with_tool(theme, tool))
