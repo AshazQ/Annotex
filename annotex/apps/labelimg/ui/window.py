@@ -1795,9 +1795,29 @@ class LabelImgWindow(QMainWindow):
         if image is None or image.isNull():
             self._status("This image cannot be handed to the model", "warning")
             return False
-        assistant.prepare(assistant.token_for(self.io.image_path(rel)), image)
+        path = self.io.image_path(rel)
+        assistant.prepare(assistant.token_for(path), image, path)
+        self._prefetch_ai()
         self.canvas.set_ai_preview(None, busy=assistant.is_busy())
         return True
+
+    def _prefetch_ai(self) -> None:
+        """Get the images around this one ready while this one is worked on.
+
+        The encoder is the slow half and it does not care which image it is
+        given, so it may as well be busy with the next one."""
+        assistant = self.assistant
+        if assistant is None or not self.image_files:
+            return
+        from annotex.ui.ai_assist import neighbour_offsets
+        items = []
+        for offset in neighbour_offsets():
+            index = self.index + offset
+            if 0 <= index < len(self.image_files):
+                path = self.io.image_path(self.image_files[index])
+                items.append((assistant.token_for(path), path))
+        if items:
+            assistant.prefetch(items)
 
     def refresh_ai_preview(self) -> None:
         canvas = self.canvas

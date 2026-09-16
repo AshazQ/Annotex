@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 
 from ...config import first_writable, user_data_dir
 
@@ -97,7 +98,14 @@ def models_dir():
 
 def bundled_models_dir():
     """A `models` folder beside the installation, for a shared or portable
-    copy that everybody on the machine reads."""
+    copy that everybody on the machine reads.
+
+    In a packaged build `__file__` points inside the temporary directory the
+    bundle unpacked itself into, which is deleted when the app closes - so
+    the folder somebody can actually drop a model into is the one beside the
+    executable, not the one beside this file."""
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "models")
     here = os.path.dirname(os.path.abspath(__file__))          # annotex/core/ai
     root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
     return os.path.join(root, "models")
@@ -266,8 +274,18 @@ class SamRuntime:
         options = ort.SessionOptions()
         options.log_severity_level = 3
         try:
+            # Measured on a 16-thread laptop with the quantized ViT-B encoder:
+            # four threads 3.7 s an image, eight 3.3 s, sixteen 3.5 s - the
+            # graph stops scaling and starts contending.  Eight is the knee.
             cpus = os.cpu_count() or 2
-            options.intra_op_num_threads = max(1, min(4, cpus))
+            options.intra_op_num_threads = max(1, min(8, cpus))
+        except Exception:
+            pass
+        try:
+            # Asked for rather than assumed: the default has changed between
+            # onnxruntime releases, and it is worth ~10 % here.
+            options.graph_optimization_level = \
+                ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         except Exception:
             pass
         self._encoder = self._session(ort, options, self.encoder_path, "encoder")
@@ -283,7 +301,12 @@ class SamRuntime:
             available = list(ort.get_available_providers())
         except Exception:
             pass
-        wanted = [p for p in ("CUDAExecutionProvider", "CoreMLExecutionProvider",
+        # Fastest first, and only ones this build of onnxruntime actually has.
+        # DirectML covers the integrated graphics in most Windows laptops,
+        # which is where the encoder hurts most; it needs the
+        # onnxruntime-directml package, so it is simply absent otherwise.
+        wanted = [p for p in ("CUDAExecutionProvider", "DmlExecutionProvider",
+                              "CoreMLExecutionProvider",
                               "CPUExecutionProvider") if p in available]
         for providers in ([wanted] if wanted else []) + [["CPUExecutionProvider"], None]:
             try:

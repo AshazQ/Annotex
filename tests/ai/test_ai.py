@@ -246,6 +246,113 @@ def main():
     app.processEvents()
     ok("the next image is prepared too", window.canvas.ai_preview is not None)
 
+    # ── the images around this one are ready before they are asked for ──
+    # The encoder is the slow half and does not care which picture it is
+    # given, so it should never be idle while somebody is labelling.
+    def settle(assistant, rounds=400):
+        for _ in range(rounds):
+            app.processEvents()
+            if not assistant.is_busy() and not assistant._queued:
+                return
+        app.processEvents()
+
+    ahead = os.path.join(SANDBOX, "ahead")
+    os.makedirs(ahead, exist_ok=True)
+    for index in range(5):
+        picture = QImage(200, 150, QImage.Format.Format_RGB32)
+        picture.fill(QColor("#%02x4080" % (40 + index * 30)))
+        picture.save(os.path.join(ahead, "shot_%d.png" % index))
+
+    window.canvas.clear_ai()
+    window.open_folder(ahead)
+    window.set_tool(BOX_AI)
+    assistant = window.ai()
+    settle(assistant)
+    tokens = [assistant.token_for(os.path.join(ahead, "shot_%d.png" % i))
+              for i in range(5)]
+    ok("the image on screen is ready", assistant.has_image(tokens[0]))
+    ok("so is the one after it, unasked", assistant.has_image(tokens[1]))
+    ok("and the one after that", assistant.has_image(tokens[2]))
+    ok("but not the whole folder", not assistant.has_image(tokens[4]))
+
+    window.next_image()
+    ok("moving on needs no new work at all",
+       assistant.has_image(tokens[1]) and not assistant.is_busy())
+    app.processEvents()
+    window.canvas._add_ai_point(QPointF(100, 75), positive=True)
+    app.processEvents()
+    ok("and a click on it answers straight away", window.canvas.ai_preview is not None)
+    window.canvas.clear_ai()
+
+    # ── and they are still ready in a week ────────────────
+    cache = assistant.disk_cache()
+    ok("answers are kept on disk", cache is not None and len(cache.entries()) >= 3)
+    settle(assistant)
+    kept = len(cache.entries())
+    assistant._embeddings.clear()                  # as a fresh run would start
+    assistant._order = []
+    ready = assistant.prepare(tokens[1], window.current_pixmap.toImage(),
+                              os.path.join(ahead, "shot_1.png"))
+    ok("an image encoded before is ready without waiting", ready is True)
+    ok("without asking the encoder again", len(cache.entries()) == kept)
+
+    # An answer belongs to the model that gave it.
+    ok("the key names the model", assistant._model_key() not in ("", "none"))
+
+    # ── opening the model before anybody clicks ───────────
+    assistant.reset()
+    ok("resetting closes the model", not assistant.loaded())
+    assistant.warm()
+    for _ in range(400):
+        app.processEvents()
+        if assistant.loaded():
+            break
+    ok("warming opens it in the background", assistant.loaded())
+    ok("and warming again while it is open does nothing",
+       assistant.warm() is None and assistant.loaded())
+
+    # ── work for a picture nobody is looking at is dropped ──
+    assistant.prefetch([(tokens[3], os.path.join(ahead, "shot_3.png")),
+                        (tokens[4], os.path.join(ahead, "shot_4.png"))])
+    ok("prefetch queues the work", len(assistant._queued) > 0)
+    assistant._token = tokens[0]
+    assistant._queued = []                         # as navigating away does
+    ok("a dropped job is not wanted", not assistant._wanted(tokens[4]))
+    ok("the image on screen always is", assistant._wanted(tokens[0]))
+    settle(assistant)
+
+    # ── an answer from the model before is not this model's answer ──
+    # A job already running when somebody swaps the model still finishes and
+    # still reports, with an embedding the new model knows nothing about.
+    # Handing that to a click would put the old model's mask on the picture.
+    generation = assistant._generation
+    stale_token = tokens[0]
+    assistant._token = stale_token
+    assistant._pending = stale_token
+    assistant.set_model(decoder, encoder, "swapped")    # different files
+    ok("swapping the model starts a new generation",
+       assistant._generation != generation)
+    assistant._signals.done.emit(generation, stale_token, object())
+    app.processEvents()
+    ok("an answer from the model before is dropped",
+       not assistant.has_image(stale_token))
+    assistant._signals.failed.emit(generation, stale_token, "from the old model")
+    app.processEvents()
+    ok("and so is a complaint from it", True)           # no exception, no dialog
+    assistant._signals.done.emit(assistant._generation, stale_token, object())
+    app.processEvents()
+    ok("an answer from this model is kept", assistant.has_image(stale_token))
+    assistant._pending = ""
+    assistant.set_model(encoder, decoder, "fake")       # and put it back
+    settle(assistant)
+
+    # ── the cache can be switched off and emptied ─────────
+    ok("the cache says how big it is", "of" in assistant.cache_description())
+    ok("and it can be emptied", assistant.clear_disk_cache() >= 0)
+    window.open_folder(batch)
+    window.set_tool(BOX_SELECT)
+    settle(assistant)
+
     # a model that cannot be opened must not take the tool down with it
     window.canvas.clear_ai()
     window.ai().set_model(os.path.join(models, "gone.onnx"),
