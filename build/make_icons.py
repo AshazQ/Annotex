@@ -4,8 +4,10 @@
 
 Writes annotex/resources/icons/annotex.svg, annotex.png (1024 px),
 annotex.ico (Windows, 16-256 px) and annotex.icns (macOS).  build_exe.py
-hands the .ico or .icns to PyInstaller.  The mark and its colours come from
-annotex.ui - the suite mark in the accent, on the dark theme's tile, as the
+hands the .ico or .icns to PyInstaller.  Also docs/social-preview.png, the
+1280x640 card to upload in the repository's Settings -> Social preview.
+
+The mark and its colours come from annotex.ui - the suite mark in the accent, on the dark theme's tile, as the
 Home page draws it - so run this again if either changes.
 """
 
@@ -47,6 +49,43 @@ def render(svg: str, size: int):
     return Image.frombytes("RGBA", (size, size), bytes(image.constBits()))
 
 
+def social_preview(svg: str, path: str) -> None:
+    """The icon, the name and what Annotex is, on the dark theme's ground."""
+    from PySide6.QtCore import QByteArray, QRectF, Qt
+    from PySide6.QtGui import QColor, QFont, QImage, QPainter
+    from PySide6.QtSvg import QSvgRenderer
+    from annotex.ui.palette import DARK
+    width, height = 1280, 640
+    image = QImage(width, height, QImage.Format.Format_ARGB32)
+    image.fill(QColor(DARK["appBg"]))
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+    icon = 260
+    left = 150
+    QSvgRenderer(QByteArray(svg.encode("utf-8"))).render(
+        painter, QRectF(left, (height - icon) / 2.0, icon, icon))
+    text_left = left + icon + 70
+    title = QFont("Noto Sans")
+    title.setPixelSize(118)
+    title.setWeight(QFont.Weight.DemiBold)
+    painter.setFont(title)
+    painter.setPen(QColor(DARK["title"]))
+    painter.drawText(QRectF(text_left, 200, width - text_left - 60, 140),
+                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom, "Annotex")
+    line = QFont("Noto Sans")
+    line.setPixelSize(38)
+    painter.setFont(line)
+    painter.setPen(QColor(DARK["sub"]))
+    painter.drawText(QRectF(text_left, 356, width - text_left - 60, 120),
+                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+                     | Qt.TextFlag.TextWordWrap,
+                     "Annotation, video and image tools\nbehind one dashboard")
+    painter.end()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    image.save(path)
+
+
 def main() -> int:
     from PySide6.QtGui import QGuiApplication
     app = QGuiApplication.instance() or QGuiApplication(sys.argv[:1])   # noqa: F841
@@ -62,6 +101,8 @@ def main() -> int:
     frames[-1].save(os.path.join(OUT, "annotex.ico"), format="ICO",
                     sizes=[(s, s) for s in ICO_SIZES], append_images=frames[:-1])
     big.save(os.path.join(OUT, "annotex.icns"), format="ICNS")
+    social_preview(svg, os.path.join(ROOT, "docs", "social-preview.png"))
+    print("wrote docs/social-preview.png")
     for name in ("annotex.svg", "annotex.png", "annotex.ico", "annotex.icns"):
         print("wrote %s (%d KB)" % (os.path.join("annotex", "resources", "icons", name),
                                      os.path.getsize(os.path.join(OUT, name)) // 1024))

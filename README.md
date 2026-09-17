@@ -1,4 +1,7 @@
-# Annotex
+<p align="center">
+  <img src="annotex/resources/icons/annotex.png" width="128" alt="Annotex icon">
+</p>
+<h1 align="center">Annotex</h1>
 
 Annotation, video and image tools behind one dashboard. Open Annotex, pick a
 tool from **Home**, and every tool shares the same look, the same keyboard
