@@ -7,7 +7,7 @@ Stops with an error when the changelog has no section for the version, so a
 release cannot go out saying nothing about what is in it.  What every
 release needs to tell somebody downloading it for the first time - which
 file to take, and how to get past a warning about an unsigned application -
-is added after the changes.
+is added after the changes, and the application icon above them.
 """
 
 from __future__ import annotations
@@ -17,6 +17,15 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The application icon at the top of the page, taken from the tag itself so
+# an old release keeps the icon it shipped with.
+HEADER = """<p align="center">
+  <img src="https://raw.githubusercontent.com/AshazQ/Annotex/{tag}/annotex/resources/icons/annotex.png" width="120" alt="Annotex">
+</p>
+<h1 align="center">Annotex {version}</h1>
+
+"""
 
 FIRST_RUN = """
 ---
@@ -69,7 +78,9 @@ def main(argv=None):
         print("CHANGELOG.md has no section for %s - write one before releasing." % version,
               file=sys.stderr)
         return 1
-    sys.stdout.write(body + "\n" + FIRST_RUN.format(version=version))
+    header = HEADER.format(tag="v" + version, version=version) if os.path.isfile(
+        os.path.join(ROOT, "annotex", "resources", "icons", "annotex.png")) else ""
+    sys.stdout.write(header + body + "\n" + FIRST_RUN.format(version=version))
     return 0
 
 
