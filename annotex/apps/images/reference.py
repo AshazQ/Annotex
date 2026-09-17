@@ -42,7 +42,8 @@ MODE = "reference"
 COMBINE_NEAREST = "nearest"     # like its closest example
 COMBINE_AVERAGE = "average"     # like the category's examples on average
 EMBED_CLASSIC = "classic"
-EMBED_ONNX = "onnx"
+EMBED_ONNX = "onnx"                 # an ONNX image model the person chose
+EMBED_MODEL = "model:"              # + a catalogue key: one Annotex downloads
 
 DEFAULT_THRESHOLD = 0.70
 DEFAULT_MARGIN = 0.03
@@ -100,8 +101,28 @@ def describe_references(categories) -> str:
                                  ", ".join(parts))
 
 
+def catalog_kind(key) -> str:
+    """The embedder choice that names a downloadable model."""
+    return EMBED_MODEL + str(key)
+
+
+def catalog_model(kind):
+    """The catalogue model an embedder choice names, or None."""
+    if not str(kind or "").startswith(EMBED_MODEL):
+        return None
+    from annotex.core.ai.catalog import embed_by_key
+    return embed_by_key(str(kind)[len(EMBED_MODEL):])
+
+
 def make_embedder(kind=EMBED_CLASSIC, model_path=""):
     """The embedder a choice in the interface names."""
+    if str(kind or "").startswith(EMBED_MODEL):
+        model = catalog_model(kind)
+        if model is None:
+            raise ReferenceError("That image model is not one Annotex knows.")
+        if not model.installed():
+            raise ReferenceError("%s has not been downloaded yet." % model.name)
+        return embed.OnnxEmbedder(model.path(), recipe=model.recipe, name=model.name)
     if kind == EMBED_ONNX:
         if not str(model_path or "").strip():
             raise ReferenceError("Choose the ONNX image model to compare with.")
@@ -130,7 +151,15 @@ class Comparison:
     only these numbers, so moving a slider never touches a model."""
 
     def __init__(self, categories, paths, scores, errors=(), embedder_name="",
-                 suggested=(DEFAULT_THRESHOLD, DEFAULT_MARGIN), calibration=""):
+                 suggested=(DEFAULT_THRESHOLD, DEFAULT_MARGIN), calibration="",
+                 rescue=None):
+        # (floor, lead): an image below the threshold still goes to its best
+        # category when it scores above `floor` - what different things score
+        # - and leads every other category by `lead`, as the examples do.
+        # Strangers look about equally unlike every category; a picture of
+        # one of them, taken badly, still clearly points at it.  `floor` is
+        # for the suggested threshold, and follows it.  None: off.
+        self.rescue = (float(rescue[0]), float(rescue[1])) if rescue else None
         # What the references themselves say the settings should be; see
         # suggest_settings.  A starting point, and the sliders move from it.
         self.suggested = (float(suggested[0]), float(suggested[1]))
@@ -163,6 +192,16 @@ class Comparison:
         if len(ranked) > 1:
             detail += "  (next %s %.3f)" % ranked[1]
         if best < float(threshold):
+            if self.rescue is not None and len(ranked) > 1:
+                floor, lead = self.rescue
+                # The floor follows the slider: the band below the threshold
+                # narrows as it rises towards 1, so a strict threshold is
+                # strict for rescued images too.
+                room = max(1e-6, 1.0 - self.suggested[0])
+                band = (self.suggested[0] - floor) * max(0.0, 1.0 - float(threshold)) / room
+                floor = float(threshold) - max(0.0, band)
+                if best >= floor and best - ranked[1][1] >= lead:
+                    return [best_name], detail + "  - below the threshold, but clearly this"
             return [UNMATCHED], detail
         if multiple == "all":
             chosen = [name for name, score in ranked if score >= float(threshold)]
@@ -320,5 +359,96 @@ def compare(embedder, categories, images, combine=COMBINE_NEAREST, cache="defaul
             columns.append((image_vectors.dot(rows.T)).max(axis=1))
     scores = np.stack(columns, axis=1).astype(np.float32)
     progress(total, total, "Compared")
+    rescue = rescue_settings(ref_vectors, kept_owners)
+    if rescue is not None:
+        why += ("; below it an image still counts when it scores over %.2f and leads "
+                "every other category by %.2f" % rescue)
+    elif len(usable) == 1 and getattr(embedder, "semantic", False):
+        # Only for a model that sees what is in a picture: comparing looks,
+        # strangers score among the category's own pictures, and taking the
+        # less typical ones would take them too.
+        threshold, note = single_category_threshold(threshold, scores[:, 0])
+        if note:
+            why += "; " + note
     return Comparison(usable, image_kept, scores, errors, embedder.name,
-                      (threshold, margin), why)
+                      (threshold, margin), why, rescue)
+
+
+def rescue_settings(vectors, owners):
+    """(floor, lead) for rescuing an image below the threshold, from the
+    examples alone - or None with a single category, where there is nothing
+    to lead.
+
+    floor   how alike examples of different categories are: a stranger
+            scores about this, so an image below it is never rescued;
+    lead    how far an example's own category is ahead of the nearest other
+            one, taken low (the tenth percentile), since a real picture of
+            a category is less typical than the examples chosen for it.
+
+    Measured over a sample of pictures from ten everyday kinds of thing,
+    this kept the examples' threshold where it was right and recovered most
+    of the real members it had wrongly left out - without letting in the
+    strangers it was right to leave out."""
+    np = embed._numpy()
+    owners = list(owners)
+    if len(set(owners)) < 2 or len(owners) < 3:
+        return None
+    alike = np.asarray(vectors, dtype=np.float32).dot(np.asarray(vectors, dtype=np.float32).T)
+    across, leads = [], []
+    for i, owner in enumerate(owners):
+        same = [alike[i, j] for j in range(len(owners)) if j != i and owners[j] == owner]
+        other = [alike[i, j] for j in range(len(owners)) if owners[j] != owner]
+        if other:
+            across.append(float(max(other)))
+        if same and other:
+            leads.append(float(max(same)) - float(max(other)))
+    if not across or not leads:
+        return None
+    lead = float(np.percentile(leads, 10))
+    if lead <= 0.0:
+        return None                     # the examples do not keep their categories apart
+    return (float(np.median(across)), lead)
+
+
+def single_category_threshold(threshold, scores):
+    """(threshold, note) for one category, now that its images are scored.
+
+    With one category the examples say how alike its own pictures are, but
+    nothing about strangers.  When the images show no separate group of low
+    scores - no strangers in sight - and most of them clear the threshold,
+    the rest are most likely the category's less typical pictures, so the
+    threshold comes down to take them, a little and no further."""
+    np = embed._numpy()
+    values = np.asarray(scores, dtype=np.float64).reshape(-1)
+    if len(values) < 8 or float(np.median(values)) < threshold or has_low_group(values):
+        return threshold, ""
+    lowered = max(threshold - 0.12, min(threshold, float(np.percentile(values, 2)) - 0.01))
+    if lowered >= threshold - 1e-6:
+        return threshold, ""
+    return lowered, ("no strangers among the images, so it starts lower, at %.2f, to take "
+                     "the less typical ones" % lowered)
+
+
+def has_low_group(values) -> bool:
+    """Whether the scores fall into two groups with a clear dip between them
+    - the low one being strangers.  A smoothed histogram, and a dip less than
+    half the smaller peak with at least a few scores on either side."""
+    np = embed._numpy()
+    x = np.sort(np.asarray(values, dtype=np.float64).reshape(-1))
+    n = len(x)
+    if n < 8 or x[-1] - x[0] < 1e-6:
+        return False
+    spread = float(np.percentile(x, 90) - np.percentile(x, 10))
+    width = max(1e-3, 0.9 * min(float(x.std()), spread / 1.34 if spread > 0 else float(x.std()))
+                * n ** -0.2)
+    grid = np.linspace(x[0], x[-1], 200)
+    density = np.exp(-0.5 * ((grid[:, None] - x[None, :]) / width) ** 2).sum(axis=1)
+    for i in range(1, len(grid) - 1):
+        if density[i] > density[i - 1] or density[i] > density[i + 1]:
+            continue
+        below = int((x < grid[i]).sum())
+        if min(below, n - below) < max(2, int(0.03 * n)):
+            continue
+        if density[i] < 0.5 * min(density[:i].max(), density[i:].max()):
+            return True
+    return False

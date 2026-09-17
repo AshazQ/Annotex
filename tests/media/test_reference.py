@@ -239,8 +239,52 @@ def main():
            all(colours.decide(i, t, m)[0][0] == truth[p]
                for i, p in enumerate(colours.paths)))
         ok("its vector is whatever width the model gives", embedder.dim == 3)
+        recipe = {"resize": 40, "crop": 32, "mean": (0.5, 0.5, 0.5),
+                  "std": (0.5, 0.5, 0.5), "output": "image_embeds"}
+        cooked = embed.OnnxEmbedder(model, recipe=recipe, name="tiny")
+        ok("a download's recipe sets the crop, and its own cache id",
+           cooked.width == 32 and cooked.id != embedder.id
+           and len(cooked.vector(categories["red"][0])) == 3)
     else:
         print("  --  skipping the ONNX model checks (onnx or onnxruntime not installed)")
+
+    # ── models to download ────────────────────────────────
+    from annotex.core.ai import catalog
+    ok("the downloadable models each have a recipe and a checksum",
+       catalog.EMBED_CATALOG and all(m.recipe.get("crop") and len(m.file.sha256) == 64
+                                    for m in catalog.EMBED_CATALOG))
+    first = catalog.EMBED_CATALOG[0]
+    kind = reference.catalog_kind(first.key)
+    ok("a model's kind names it", reference.catalog_model(kind) is first)
+    ok("its recipe is found from the file name",
+       catalog.embed_recipe_for(first.path()) == first.recipe)
+    try:
+        reference.make_embedder(kind, "")
+        ok("a model not downloaded yet is refused, not crashed", first.installed())
+    except reference.ReferenceError:
+        ok("a model not downloaded yet is refused, not crashed", True)
+
+    # ── calibration beyond the threshold ──────────────────
+    ref = numpy.array([[1, 0, 0], [0.9, 0.1, 0], [0, 1, 0], [0.1, 0.9, 0]], dtype="float32")
+    ref /= numpy.linalg.norm(ref, axis=1, keepdims=True)
+    rescue = reference.rescue_settings(ref, ["a", "a", "b", "b"])
+    ok("distinct categories give a rescue rule", rescue is not None and rescue[1] > 0)
+    ok("one category gives none", reference.rescue_settings(ref[:2], ["a", "a"]) is None)
+    close = reference.Comparison(["a", "b"], ["x.png"], numpy.array([[0.40, 0.05]]), [],
+                                 "test", (0.5, 0.0), "", rescue=(0.2, 0.2))
+    ok("a clear lead below the threshold still counts", close.decide(0, 0.5, 0.0)[0] == ["a"])
+    tight = reference.Comparison(["a", "b"], ["x.png"], numpy.array([[0.40, 0.35]]), [],
+                                 "test", (0.5, 0.0), "", rescue=(0.2, 0.2))
+    ok("without a clear lead it is left out", tight.decide(0, 0.5, 0.0)[0] == [UNMATCHED])
+    ok("and a stricter threshold is stricter for the rescue too",
+       close.decide(0, 0.75, 0.0)[0] == [UNMATCHED])
+    belongs = numpy.linspace(0.55, 0.8, 20)
+    lowered, note = reference.single_category_threshold(0.6, belongs)
+    ok("one category whose images all belong lowers the threshold",
+       lowered < 0.6 and bool(note))
+    split = numpy.concatenate([numpy.linspace(0.1, 0.2, 10), numpy.linspace(0.7, 0.8, 10)])
+    ok("but not when some images clearly do not",
+       reference.single_category_threshold(0.6, split)[0] == 0.6)
     try:
         reference.make_embedder(reference.EMBED_ONNX, "")
         ok("no model chosen is refused", False)

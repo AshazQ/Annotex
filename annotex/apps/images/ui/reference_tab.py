@@ -72,13 +72,14 @@ class ReferenceTab(QWidget):
         layout.addWidget(self.ref_summary)
 
         self.embedder = QComboBox()
-        self.embedder.addItem("How they look - nothing to download", reference.EMBED_CLASSIC)
-        self.embedder.addItem("What is in them - an ONNX image model", reference.EMBED_ONNX)
+        self.embedder.setMinimumWidth(self.embedder.fontMetrics().horizontalAdvance("What is in them - DINOv2 small") + 72)
+        self._fill_embedders()
         self.embedder.setToolTip(
-            "How they look compares layout and colour: right for the same scene, the same "
-            "camera, near-duplicates.  What is in them needs an image model such as a CLIP "
-            "or DINOv2 image encoder exported to ONNX, and is right for \"more pictures of "
-            "this kind of thing\".")
+            "What is in them uses an image model and is right for \"more pictures of this "
+            "kind of thing\" - animals, objects, scenes.  CLIP knows what things are; "
+            "DINOv2 notices fine detail.  Either downloads in one click.\n"
+            "How they look compares layout and colour only: right for the same scene, the "
+            "same camera, near-duplicates - and wrong for telling kinds of thing apart.")
         found = self.embedder.findData(settings.get("ref_embedder", reference.EMBED_CLASSIC))
         self.embedder.setCurrentIndex(max(0, found))
         self.embedder.currentIndexChanged.connect(self._embedder_changed)
@@ -103,6 +104,8 @@ class ReferenceTab(QWidget):
         self.model_browse.clicked.connect(self.browse_model)
         self.model_row = row(QLabel("Model"), self.model_edit, self.model_browse)
         layout.addWidget(self.model_row)
+        self.method_hint = hint("")
+        layout.addWidget(self.method_hint)
 
         self.compare_note = hint("")
         layout.addWidget(self.compare_note)
@@ -181,6 +184,8 @@ class ReferenceTab(QWidget):
                               "decides.  Click one to see it.")
 
         self._rows = []
+        self._download_job_id = None
+        self._compare_after_download = False
         page.jobs.jobFinished.connect(self._job_finished)
         self._references_changed(quiet=True)
         self._settings_moved()
@@ -224,9 +229,67 @@ class ReferenceTab(QWidget):
                                      "few example pictures in each.")
         self._invalidate()
 
+    def _fill_embedders(self) -> None:
+        """What is in them first - it is what people usually mean - then how
+        they look, then a model of your own."""
+        current = self.embedder.currentData()
+        blocked = self.embedder.blockSignals(True)
+        self.embedder.clear()
+        try:
+            from annotex.core.ai.catalog import EMBED_CATALOG
+        except Exception:                               # pragma: no cover
+            EMBED_CATALOG = []
+        for model in EMBED_CATALOG:
+            state = "" if model.installed() else "  ·  %.0f MB, one-click download" % (
+                model.size / (1024.0 * 1024.0))
+            self.embedder.addItem("What is in them - %s%s" % (model.name, state),
+                                  reference.catalog_kind(model.key))
+            self.embedder.setItemData(self.embedder.count() - 1, model.blurb,
+                                      Qt.ItemDataRole.ToolTipRole)
+        self.embedder.addItem("How they look - nothing to download", reference.EMBED_CLASSIC)
+        self.embedder.addItem("What is in them - your own ONNX image model", reference.EMBED_ONNX)
+        if current is not None:
+            found = self.embedder.findData(current)
+            if found >= 0:
+                self.embedder.setCurrentIndex(found)
+        self.embedder.blockSignals(blocked)
+
+    def _download_needed(self):
+        """The catalogue model chosen but not on this machine yet, or None."""
+        model = reference.catalog_model(self.embedder.currentData())
+        return model if model is not None and not model.installed() else None
+
     def _embedder_changed(self, _index=0) -> None:
         self.page.settings.set("ref_embedder", self.embedder.currentData())
         self._invalidate()
+
+    def download_model(self, then_compare=False) -> None:
+        """Fetch the chosen image model as a job - with progress, and
+        cancellable - and compare as soon as it is here, if that was asked."""
+        model = self._download_needed()
+        if model is None or self._download_job_id is not None:
+            return
+        from annotex.core.ai.catalog import Cancelled, download_embed_model
+        from annotex.core.jobs import JobCancelled
+
+        def work(ctx):
+            def progress(done, total):
+                ctx.progress(done / float(total or 1), "%s  ·  %.0f of %.0f MB" % (
+                    model.name, done / 1048576.0, total / 1048576.0))
+            try:
+                path = download_embed_model(model, progress=progress,
+                                            cancelled=lambda: ctx.cancelled)
+            except Cancelled:
+                raise JobCancelled()
+            return "%s is ready  ·  %s" % (model.name, path)
+
+        job = self.page.submit(Job("Download %s (%.0f MB)" % (model.name, model.size / 1048576.0),
+                                   work))
+        self._download_job_id = job.id
+        self._compare_after_download = bool(then_compare)
+        self.compare_note.setText("Downloading %s - it is kept, so this happens once.  "
+                                  "It can be stopped from Jobs." % model.name)
+        self.sync()
 
     # ══════════════════════════════════════════════════════
     # COMPARING
@@ -246,6 +309,14 @@ class ReferenceTab(QWidget):
     def compare(self) -> None:
         if not self.page.images:
             self.page.status("Choose a folder of images to sort first", "warning")
+            return
+        if self._download_needed() is not None:
+            # One click: fetch the model, then compare as soon as it is here.
+            if self.categories() is None:
+                self.page.status("The examples cannot be used yet - see the note under them",
+                                 "warning")
+                return
+            self.download_model(then_compare=True)
             return
         categories = self.categories()
         if categories is None:
@@ -294,6 +365,18 @@ class ReferenceTab(QWidget):
         self.sync()
 
     def _job_finished(self, job) -> None:
+        if job.id == self._download_job_id:
+            self._download_job_id = None
+            self._fill_embedders()
+            if job.state == "done":
+                self.compare_note.setText(job.message)
+                if self._compare_after_download and self._download_needed() is None:
+                    self.compare()
+            else:
+                self.compare_note.setText(job.error or "The model was not downloaded - "
+                                          "Compare tries again, and picks up where it stopped.")
+            self.sync()
+            return
         if job.id != self._job_id:
             return
         self._job_id = None
@@ -417,12 +500,29 @@ class ReferenceTab(QWidget):
                                                          reference.MODE)[0]))
 
     def sync(self) -> None:
-        missing = bool(embed.missing_packages())
+        kind = self.embedder.currentData()
+        needs_onnx = kind != reference.EMBED_CLASSIC
+        missing = bool(embed.missing_packages(onnx=needs_onnx))
+        self.missing.setText(embed.install_hint(onnx=needs_onnx))
         self.missing.setVisible(missing)
-        onnx = self.embedder.currentData() == reference.EMBED_ONNX
+        onnx = kind == reference.EMBED_ONNX
         self.model_row.setVisible(onnx)
-        running = self._job_id is not None
+        running = self._job_id is not None or self._download_job_id is not None
+        download = self._download_needed()
+        self.compare_button.setText("Download %s and compare" % download.name if download
+                                    else "Compare")
         self.compare_button.setEnabled(not missing and not running and bool(self.page.images))
+        if kind == reference.EMBED_CLASSIC:
+            self.method_hint.setText("Compares layout and colour only - right for the same "
+                                     "scene or camera, not for telling kinds of thing apart.  "
+                                     "For that, choose What is in them - CLIP.")
+        elif download is not None:
+            self.method_hint.setText("%s: %s.  It downloads once (%.0f MB) and is kept."
+                                     % (download.name, download.blurb, download.size / 1048576.0))
+        else:
+            model = reference.catalog_model(kind)
+            self.method_hint.setText("%s: %s." % (model.name, model.blurb) if model else "")
+        self.method_hint.setVisible(bool(self.method_hint.text()))
         ready = self.comparison is not None and self._compared_for == self._recipe()
         for widget in (self.threshold, self.margin, self.every, self.table):
             widget.setEnabled(ready)

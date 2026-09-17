@@ -214,7 +214,8 @@ class OnnxEmbedder(Embedder):
 
     semantic = True
 
-    def __init__(self, model_path, imagenet_norm: bool = True, size=0):
+    def __init__(self, model_path, imagenet_norm: bool = True, size=0, recipe=None,
+                 name=""):
         missing = missing_packages(onnx=True)
         if missing:
             raise EmbedUnavailable(install_hint(onnx=True))
@@ -222,6 +223,15 @@ class OnnxEmbedder(Embedder):
         import onnxruntime as ort
         self.np = np
         self.path = str(model_path or "")
+        if recipe is None:
+            # A model from the catalogue is prepared exactly as it was trained;
+            # anybody else's is read off its graph as before.
+            try:
+                from .catalog import embed_recipe_for
+                recipe = embed_recipe_for(self.path)
+            except Exception:                           # pragma: no cover
+                recipe = None
+        self.recipe = dict(recipe) if recipe else None
         if not os.path.isfile(self.path):
             raise EmbedUnavailable("That model file is not there:\n%s" % self.path)
         options = ort.SessionOptions()
@@ -258,26 +268,52 @@ class OnnxEmbedder(Embedder):
         self.height = fixed or (height if isinstance(height, int) and height > 0 else 224)
         self.dtype = {"tensor(float16)": np.float16, "tensor(uint8)": np.uint8,
                       "tensor(double)": np.float64}.get(spec.type, np.float32)
-        self.name = os.path.basename(self.path)
+        self.name = name or os.path.basename(self.path)
         self.dim = 0                       # learnt from the first answer
+        self._outputs = [o.name for o in self.session.get_outputs()]
+        if self.recipe:
+            self.width = self.height = int(self.recipe.get("crop") or self.width)
 
     @property
     def id(self) -> str:
-        return "onnx-%s" % model_id(self.path)
+        tag = ""
+        if self.recipe:
+            # A change of preparation changes every number, so it is part of
+            # what the cache files the answers under.
+            tag = "-" + EmbeddingCache.key(sorted(self.recipe.items()))[:8]
+        return "onnx-%s%s" % (model_id(self.path), tag)
+
+    def _prepared(self, image):
+        """Resized the way the model expects: to its size directly, or - with
+        a recipe - shortest side first, then the centre cut square, so the
+        picture keeps its proportions instead of being squashed."""
+        from PIL import Image
+        if not self.recipe:
+            return image.resize((self.width, self.height), Image.Resampling.BILINEAR)
+        shortest = float(self.recipe.get("resize") or self.width)
+        scale = shortest / float(min(image.width, image.height) or 1)
+        size = (max(self.width, int(round(image.width * scale))),
+                max(self.height, int(round(image.height * scale))))
+        image = image.resize(size, Image.Resampling.BICUBIC)
+        left = (size[0] - self.width) // 2
+        top = (size[1] - self.height) // 2
+        return image.crop((left, top, left + self.width, top + self.height))
 
     def _tensor(self, path):
-        from PIL import Image
         np = self.np
         image = _open_rgb(path)
         if self.channels == 1:
             image = image.convert("L")
-        image = image.resize((self.width, self.height), Image.Resampling.BILINEAR)
+        image = self._prepared(image)
         array = np.asarray(image, dtype=np.float32)
         if array.ndim == 2:
             array = array[:, :, None]
         if self.dtype != np.uint8:
             array = array / 255.0
-            if self.imagenet_norm and array.shape[2] == 3:
+            if self.recipe and array.shape[2] == 3:
+                array = (array - np.array(self.recipe["mean"], dtype=np.float32)) \
+                    / np.array(self.recipe["std"], dtype=np.float32)
+            elif self.imagenet_norm and array.shape[2] == 3:
                 array = (array - np.array([0.485, 0.456, 0.406], dtype=np.float32)) \
                     / np.array([0.229, 0.224, 0.225], dtype=np.float32)
         if self.layout == "nchw":
@@ -287,6 +323,16 @@ class OnnxEmbedder(Embedder):
     def _pool(self, outputs):
         """One vector out of whatever the model handed back."""
         np = self.np
+        wanted = (self.recipe or {}).get("output")
+        if wanted:
+            named = dict(zip(self._outputs, outputs))
+            if wanted == "cls" and "last_hidden_state" in named:
+                # The class token: what a ViT sums a picture up in.
+                tokens = np.asarray(named["last_hidden_state"], dtype=np.float32)
+                if tokens.ndim == 3 and tokens.shape[1]:
+                    return tokens[0, 0].reshape(-1)
+            if wanted in named:
+                return np.asarray(named[wanted], dtype=np.float32).reshape(-1)
         best = None
         for value in outputs:
             array = np.asarray(value, dtype=np.float32)

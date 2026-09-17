@@ -45,14 +45,15 @@ class Cancelled(DownloadError):
 
 
 class RemoteFile:
-    def __init__(self, url, size, sha256=""):
+    def __init__(self, url, size, sha256="", filename=""):
         self.url = url
         self.size = int(size)
         self.sha256 = sha256.lower()
+        self._filename = str(filename or "")
 
     @property
     def filename(self) -> str:
-        return self.url.rsplit("/", 1)[-1]
+        return self._filename or self.url.rsplit("/", 1)[-1]
 
 
 class CatalogModel:
@@ -237,3 +238,98 @@ def download_model(model, folder=None, progress=None, cancelled=None) -> ModelPa
                       cancelled)
         before += remote.size
     return model.pair(folder)
+
+
+# ══════════════════════════════════════════════════════════════
+# IMAGE MODELS FOR SORTING BY EXAMPLE
+# ══════════════════════════════════════════════════════════════
+# Comparing pictures by what is in them needs a model trained to see that.
+# Each entry carries its own preparation - the size it was trained at, how
+# the picture is cropped, its colour statistics and which output is the
+# picture's vector - because a model fed pictures prepared the wrong way
+# still answers, just badly, and nothing says so.
+HF = "https://huggingface.co/%s/resolve/%s/onnx/%s"
+
+CLIP_MEAN = (0.48145466, 0.4578275, 0.40821073)
+CLIP_STD = (0.26862954, 0.26130258, 0.27577711)
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
+class EmbedModel:
+    """An image model for sorting by example: one ONNX file and its recipe.
+
+    `recipe` is {"resize": shortest side, "crop": square side, "mean",
+    "std", "output": an output name, or "cls" for the first token of the
+    last hidden state}."""
+
+    def __init__(self, key, name, blurb, remote, recipe):
+        self.key = key
+        self.name = name
+        self.blurb = blurb
+        self.file = remote
+        self.recipe = dict(recipe)
+
+    @property
+    def size(self) -> int:
+        return self.file.size
+
+    def describe(self) -> str:
+        return "%s  ·  %.0f MB" % (self.name, self.size / (1024.0 * 1024.0))
+
+    def path(self, folder=None) -> str:
+        return os.path.join(str(folder or embed_models_dir()), self.file.filename)
+
+    def installed(self, folder=None) -> bool:
+        try:
+            return os.path.getsize(self.path(folder)) == self.file.size
+        except OSError:
+            return False
+
+
+EMBED_CATALOG = [
+    EmbedModel(
+        "clip_b32", "CLIP ViT-B/32",
+        "recommended - knows what things are: animals, vehicles, scenes, objects",
+        RemoteFile(HF % ("Xenova/clip-vit-base-patch32", "d15189d7028b43f1d3e65039190477f6af591c2a",
+                         "vision_model_quantized.onnx"), 89117001,
+                   "583fd1110a514667812fee7d684952aaf82a99b959760c8d7dca7e0ab9839299",
+                   filename="clip-vit-b32.image.quantized.onnx"),
+        {"resize": 224, "crop": 224, "mean": CLIP_MEAN, "std": CLIP_STD,
+         "output": "image_embeds"}),
+    EmbedModel(
+        "dinov2_small", "DINOv2 small",
+        "small - notices fine visual detail: breeds, parts, textures, look-alikes",
+        RemoteFile(HF % ("Xenova/dinov2-small", "c2bb04a51fab207c420665f1946016107bffc701",
+                         "model_quantized.onnx"), 24451943,
+                   "3afdc8bc63b50558d6e5770f5b799bb82455c2311183a2de43803f343a29d917",
+                   filename="dinov2-small.quantized.onnx"),
+        {"resize": 256, "crop": 224, "mean": IMAGENET_MEAN, "std": IMAGENET_STD,
+         "output": "cls"}),
+]
+
+
+def embed_models_dir() -> str:
+    """Kept apart from the SAM models, whose file names are what pairs them."""
+    return os.path.join(str(models_dir()), "image_models")
+
+
+def embed_by_key(key):
+    for model in EMBED_CATALOG:
+        if model.key == key:
+            return model
+    return None
+
+
+def embed_recipe_for(path):
+    """The recipe for a catalogue model's file, or None for anyone else's."""
+    base = os.path.basename(str(path or ""))
+    for model in EMBED_CATALOG:
+        if base == model.file.filename:
+            return dict(model.recipe)
+    return None
+
+
+def download_embed_model(model, folder=None, progress=None, cancelled=None) -> str:
+    """Fetch one image model; returns its path.  Raises DownloadError."""
+    return download_file(model.file, model.path(folder), progress, cancelled)
